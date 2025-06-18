@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "seed-themes": "node utils/seedThemes.js"
+  }
+}

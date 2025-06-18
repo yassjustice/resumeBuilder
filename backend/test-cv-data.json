@@ -1,0 +1,44 @@
+{
+  "cvData": {
+    "personalInfo": {
+      "name": "John Doe",
+      "title": "Software Engineer",
+      "contact": {
+        "email": "john.doe@example.com",
+        "phone": "+1-555-0123",
+        "location": "New York, NY"
+      }
+    },
+    "summary": "Experienced software engineer with 5+ years of expertise in full-stack development.",
+    "experience": [
+      {
+        "title": "Senior Software Engineer",
+        "company": "Tech Corp",
+        "period": "2020 - Present",
+        "location": "New York, NY",
+        "responsibilities": [
+          "Developed and maintained full-stack web applications",
+          "Led a team of 3 junior developers",
+          "Implemented CI/CD pipelines"
+        ]
+      }
+    ],
+    "education": [
+      {
+        "degree": "Bachelor of Science in Computer Science",
+        "institution": "University of Technology",
+        "period": "2016 - 2020",
+        "location": "Boston, MA"
+      }
+    ],
+    "skills": {
+      "Programming": ["JavaScript", "Python", "Java"],
+      "Frameworks": ["React", "Node.js", "Express"],
+      "Databases": ["MongoDB", "PostgreSQL"]
+    }
+  },
+  "language": "en",
+  "pageBreakThreshold": 85,
+  "titleSectionConnection": true,
+  "twoColumnSkills": true
+}
