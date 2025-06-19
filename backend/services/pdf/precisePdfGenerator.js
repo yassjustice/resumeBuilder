@@ -8,20 +8,47 @@ const { APIError } = require('../../middleware/errorHandler');
 const { generateSmartPageBreakHTML } = require('../html/smartPageBreakHtmlGenerator');
 
 /**
+ * Generate PDF with retry logic for Windows Puppeteer issues
+ */
+const generatePrecisePDFWithRetry = async (cvData, options = {}, maxRetries = 2) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 PDF generation attempt ${attempt}/${maxRetries}`);
+      return await generatePrecisePDF(cvData, options);
+    } catch (error) {
+      console.error(`❌ PDF generation attempt ${attempt} failed:`, error.message);
+      
+      if (attempt === maxRetries) {
+        throw error; // Re-throw on final attempt
+      }
+      
+      // Wait before retry
+      console.log(`⏳ Waiting before retry attempt ${attempt + 1}...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+};
+
+/**
  * Generate PDF with precise layout control
  */
 const generatePrecisePDF = async (cvData, options = {}) => {
   let browser;
   
-  try {
-    browser = await puppeteer.launch({
+  try {    browser = await puppeteer.launch({
       headless: 'new',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-gpu'
-      ]
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--no-first-run',
+        '--disable-default-apps'
+      ],
+      timeout: 30000,
+      protocolTimeout: 60000 // Increased protocol timeout
     });
 
     const page = await browser.newPage();
@@ -70,23 +97,38 @@ const generatePrecisePDF = async (cvData, options = {}) => {
           resolve();
         }, 500); // Increased timeout for better rendering
       });
-    });
-
+    });    console.log('🔄 Generating PDF...');
     const pdfBuffer = await page.pdf(pdfOptions);
     
-    console.log('Precise PDF generated successfully');
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      throw new Error('Generated PDF buffer is empty');
+    }
+    
+    console.log('✅ Precise PDF generated successfully, size:', pdfBuffer.length);
     return pdfBuffer;
 
   } catch (error) {
     console.error('Precise PDF Generation Error:', error);
-    throw new APIError(`Precise PDF generation failed: ${error.message}`, 500);
-  } finally {
+    throw new APIError(`Precise PDF generation failed: ${error.message}`, 500);  } finally {
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+        console.log('Browser closed successfully');
+      } catch (closeError) {
+        console.warn('Warning: Browser cleanup failed:', closeError.message);
+        // Force kill browser processes on Windows if normal close fails
+        try {
+          const pages = await browser.pages();
+          await Promise.all(pages.map(page => page.close().catch(() => {})));
+          await browser.close();
+        } catch (forceCloseError) {
+          console.warn('Warning: Force browser close failed:', forceCloseError.message);
+        }
+      }
     }
   }
 };
 
 module.exports = {
-  generatePrecisePDF
+  generatePrecisePDF: generatePrecisePDFWithRetry // Export the version with retry logic
 };

@@ -275,18 +275,25 @@ const getCVPreview = async (req, res, next) => {
  */
 const generatePrecisePDF = async (req, res, next) => {
   try {
+    console.log('🔄 generatePrecisePDF: Starting PDF generation for ID:', req.params.id);
+    console.log('🔄 Query params:', req.query);
+    
     const cv = await CV.findById(req.params.id);
     
     if (!cv || !cv.isActive) {
+      console.log('❌ CV not found or inactive for ID:', req.params.id);
       return next(new APIError('CV not found', 404));
     }
+    
+    console.log('✅ CV found:', cv.personalInfo?.name || 'Unknown');
     
     // Check if language parameter is provided in the query
     if (req.query.language && ['en', 'fr'].includes(req.query.language)) {
       // Temporarily override the CV language for PDF generation
       cv.language = req.query.language;
-    }
-      // Generate PDF with enhanced smart page breaks (All 3 tasks implemented)
+      console.log('🌐 Language overridden to:', cv.language);
+    }      // Generate PDF with enhanced smart page breaks (All 3 tasks implemented)
+    console.log('🔄 Generating PDF with options...');
     const pdfBuffer = await pdfService.generateEnhancedSmartPDF(cv, {
       pageBreakThreshold: 85,        // Task 1: Smart page breaks - increased threshold
       titleSectionConnection: true,  // Task 2: Title-section connection  
@@ -296,20 +303,39 @@ const generatePrecisePDF = async (req, res, next) => {
       language: cv.language          // Use the language from CV data (which may have been overridden by query param)
     });
     
-    const fileName = `${cv.personalInfo.name.replace(/\s+/g, '_')}_CV_Smart.pdf`;
-      res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${fileName}"`,
-      'Content-Length': pdfBuffer.length,
-      'X-Layout-Engine': 'Precise',
-      'X-Spacing-Control': 'Granular',
-      'Cache-Control': 'no-store, max-age=0, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    });
+    console.log('✅ PDF generated successfully. Buffer length:', pdfBuffer.length);
     
+    const fileName = `${cv.personalInfo.name.replace(/\s+/g, '_')}_CV_Smart.pdf`;
+      // Set headers optimized for PDF embedding and CORS
+    // Use different headers for document route to avoid ad-blocker detection
+    const headers = {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${fileName}"`,
+      'Content-Length': pdfBuffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'Cache-Control': 'public, max-age=300',
+      'X-Frame-Options': 'SAMEORIGIN', // Allow iframe embedding
+      'Content-Security-Policy': 'frame-ancestors *', // Allow iframe from any origin
+    };
+
+    // Add special headers for document route to avoid detection
+    if (req.isDocumentRoute) {
+      headers['Content-Type'] = 'application/octet-stream';
+      headers['X-Content-Type'] = 'application/pdf';
+      headers['X-Document-Type'] = 'cv-document';
+    }
+    
+    console.log('🔄 Setting headers:', headers);
+    res.set(headers);
+    
+    console.log('🔄 Sending PDF response...');
     res.end(pdfBuffer, 'binary');
+    console.log('✅ PDF response sent successfully');
   } catch (error) {
+    console.error('❌ generatePrecisePDF error:', error);
     next(error);
   }
 };
@@ -534,6 +560,231 @@ const generatePDFPreview = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Generate PDF for iframe embedding (optimized for display)
+ * @route   GET /api/cv/:id/pdf-viewer
+ * @access  Public
+ */
+const generatePDFForViewer = async (req, res, next) => {
+  try {
+    console.log('🔄 generatePDFForViewer: Starting PDF generation for iframe embedding, ID:', req.params.id);
+    console.log('🔄 Query params:', req.query);
+    
+    const cv = await CV.findById(req.params.id);
+    
+    if (!cv || !cv.isActive) {
+      console.log('❌ CV not found or inactive for ID:', req.params.id);
+      return next(new APIError('CV not found', 404));
+    }
+    
+    console.log('✅ CV found:', cv.personalInfo?.name || 'Unknown');
+    
+    // Check if language parameter is provided in the query
+    if (req.query.language && ['en', 'fr'].includes(req.query.language)) {
+      // Temporarily override the CV language for PDF generation
+      cv.language = req.query.language;
+      console.log('🌐 Language overridden to:', cv.language);
+    }
+
+    // Generate PDF with enhanced smart page breaks (All 3 tasks implemented)
+    console.log('🔄 Generating PDF for iframe viewer...');
+    const pdfBuffer = await pdfService.generateEnhancedSmartPDF(cv, {
+      pageBreakThreshold: 85,        // Task 1: Smart page breaks - increased threshold
+      titleSectionConnection: true,  // Task 2: Title-section connection  
+      twoColumnSkills: true,         // Task 3: Two-column skills layout
+      sectionSpacing: 2,             // Small section spacing to prevent huge gaps
+      elementSpacing: 2,             // Small element spacing to prevent huge gaps
+      language: cv.language          // Use the language from CV data (which may have been overridden by query param)
+    });
+    
+    console.log('✅ PDF for iframe generated successfully. Buffer length:', pdfBuffer.length);
+    
+    const fileName = `${cv.personalInfo.name.replace(/\s+/g, '_')}_CV_Preview.pdf`;
+      // Headers specifically optimized for iframe embedding
+    const headers = {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${fileName}"`,
+      'Content-Length': pdfBuffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'X-Frame-Options': 'ALLOWALL',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    };
+    
+    console.log('🔄 Setting iframe-optimized headers:', headers);
+    res.set(headers);
+    
+    console.log('🔄 Sending PDF response for iframe...');
+    res.end(pdfBuffer, 'binary');
+    console.log('✅ PDF iframe response sent successfully');
+  } catch (error) {
+    console.error('❌ generatePDFForViewer error:', error);
+    next(error);
+  }
+};
+
+/**
+ * @desc    Serve HTML page with embedded PDF for iframe viewing
+ * @route   GET /api/cv/:id/pdf-embed
+ * @access  Public
+ */
+const generatePDFEmbed = async (req, res, next) => {
+  try {
+    console.log('🔄 generatePDFEmbed: Creating HTML embed for PDF, ID:', req.params.id);
+    
+    const cv = await CV.findById(req.params.id);
+    
+    if (!cv || !cv.isActive) {
+      console.log('❌ CV not found or inactive for ID:', req.params.id);
+      return next(new APIError('CV not found', 404));
+    }
+    
+    // Build PDF URL (use the working pdf-viewer endpoint)
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const pdfUrl = `${baseUrl}/api/cvs/${req.params.id}/pdf-viewer?${req.url.split('?')[1] || ''}`;
+      // Create HTML with embedded PDF (no header to avoid duplication)
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Preview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .pdf-container {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+        
+        .pdf-viewer {
+            flex: 1;
+            position: relative;
+            background: #f8f9fa;
+        }
+        
+        .pdf-embed {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .fallback-message {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #666;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .fallback-message h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .fallback-message .btn {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-container">
+        <div class="pdf-viewer">
+            <object 
+                class="pdf-embed" 
+                data="${pdfUrl}" 
+                type="application/pdf"
+                aria-label="PDF Preview">
+                <embed 
+                    class="pdf-embed" 
+                    src="${pdfUrl}" 
+                    type="application/pdf"
+                    aria-label="PDF Preview" />
+                <div class="fallback-message">
+                    <h3>PDF Preview Not Available</h3>
+                    <p>Your browser doesn't support inline PDF viewing.</p>
+                    <a href="${pdfUrl}" target="_blank" class="btn">Open PDF</a>
+                </div>
+            </object>
+        </div>
+    </div>
+    
+    <script>
+        console.log('PDF Embed page loaded successfully');
+        console.log('PDF URL:', '${pdfUrl}');
+        
+        // Monitor PDF loading
+        const object = document.querySelector('object');
+        const embed = document.querySelector('embed');
+        const fallback = document.querySelector('.fallback-message');
+        
+        // Show fallback after timeout if PDF doesn't load
+        setTimeout(() => {
+            if (!object.contentDocument && !embed.contentDocument) {
+                console.warn('PDF may not have loaded properly');
+                // Uncomment to show fallback: fallback.style.display = 'block';
+            } else {
+                console.log('PDF loaded successfully');
+            }
+        }, 3000);
+    </script>
+</body>
+</html>`;
+
+    console.log('🔄 Sending HTML embed response...');
+    
+    res.set({
+      'Content-Type': 'text/html; charset=utf-8',
+      'X-Frame-Options': 'ALLOWALL',
+      'Cache-Control': 'no-cache, no-store, must-revalidate'
+    });
+    
+    res.send(htmlContent);
+    console.log('✅ HTML embed response sent successfully');
+    
+  } catch (error) {
+    console.error('❌ generatePDFEmbed error:', error);
+    next(error);
+  }
+};
+
+/**
+ * @desc    Serve complete PDF viewer HTML page with embedded PDF
+ * @route   GET /api/cv/:id/pdf-viewer
+ * @access  Public
+ */
 module.exports = {
   getAllCVs,
   createCV,
@@ -546,5 +797,7 @@ module.exports = {
   getCVPreview,
   getLayoutAnalysis,
   updateCVTheme,
-  generatePDFPreview
+  generatePDFPreview,
+  generatePDFForViewer,
+  generatePDFEmbed
 };

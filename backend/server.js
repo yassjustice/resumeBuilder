@@ -27,13 +27,39 @@ const PORT = process.env.PORT || 5000;
 connectDB();
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: false,
+  crossOriginOpenerPolicy: false,
+  frameguard: false // Disable X-Frame-Options entirely
+}));
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin: '*', // Allow all origins for now
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma'],
+  exposedHeaders: ['Content-Disposition', 'Content-Length', 'Content-Type']
 }));
+
+// Additional CORS headers for PDF responses
+app.use('/api/cvs/:id/pdf-precise', (req, res, next) => {
+  console.log('🔄 CORS middleware for PDF route hit:', req.method, req.originalUrl);
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Cache-Control, Pragma');
+  res.header('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  
+  if (req.method === 'OPTIONS') {
+    console.log('✅ Responding to OPTIONS preflight');
+    return res.status(200).end();
+  }
+  
+  console.log('🔄 Continuing to route handler...');
+  next();
+});
 
 // Logging middleware
 app.use(morgan('combined'));

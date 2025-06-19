@@ -60,6 +60,21 @@ router.delete('/:id', validateCVId, cvController.deleteCV);
 router.get('/:id/pdf-precise', validateCVId, cvController.generatePrecisePDF);
 
 /**
+ * @route   OPTIONS /api/cv/:id/pdf-precise
+ * @desc    Handle CORS preflight for PDF requests
+ * @access  Public
+ */
+router.options('/:id/pdf-precise', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+  });
+  res.sendStatus(200);
+});
+
+/**
  * @route   POST /api/cv/:id/pdf-precise
  * @desc    Generate PDF with enhanced smart page breaks and custom options
  * @access  Public
@@ -79,5 +94,30 @@ router.post('/:id/pdf-preview', validateCVIdForPreview, cvController.generatePDF
  * @access  Public
  */
 router.patch('/:id/theme', validateCVId, cvController.updateCVTheme);
+
+/**
+ * @route   GET /api/cv/:id/document
+ * @desc    Serve PDF with ad-blocker friendly URL (alternative to pdf-precise)
+ * @access  Public
+ */
+router.get('/:id/document', validateCVId, (req, res, next) => {
+  // Use the same controller but with different headers to avoid ad-blocker detection
+  req.isDocumentRoute = true;
+  cvController.generatePrecisePDF(req, res, next);
+});
+
+/**
+ * @route   GET /api/cv/:id/pdf-viewer
+ * @desc    Generate PDF optimized for iframe embedding
+ * @access  Public
+ */
+router.get('/:id/pdf-viewer', validateCVId, cvController.generatePDFForViewer);
+
+/**
+ * @route   GET /api/cv/:id/pdf-embed
+ * @desc    Serve HTML page with embedded PDF for iframe viewing
+ * @access  Public
+ */
+router.get('/:id/pdf-embed', validateCVId, cvController.generatePDFEmbed);
 
 module.exports = router;
