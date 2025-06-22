@@ -1,0 +1,35 @@
+{
+  "name": "AI-Powered CV Builder UI/UX",
+  "description": "Design and implement the UI/UX for a CV Builder app with AI integration. The backend is already functional and connected. Focus on clean flow, excellent usability, and responsive design. The app will leverage Gemini AI and support authentication/authorization.",
+  "tasks": [
+    {
+      "title": "User Flow & UI Components",
+      "details": [
+        "1. Welcome page where users can:",
+        "   - Upload an old CV (PDF/DOCX or raw text)",
+        "   - Paste CV text",
+        "   - Or manually fill CV sections (e.g., Experience, Education, Skills, etc.)",
+        "2. Generate a 'Full CV Version' from the user's input",
+        "3. Let user upload or paste a job offer (text or PDF)",
+        "4. Generate a Job-Specific CV tailored to that job offer",
+        "5. Generate a Cover Letter tailored to that job offer",
+        "6. Save only one 'Full CV' per user account",
+        "7. Job-specific CVs and Cover Letters should be downloadable once generated but NOT stored in the database"
+      ]
+    },
+    {
+      "title": "Technical Considerations",
+      "details": [
+        "Implement responsive, accessible, and scalable UI components",
+        "Ensure readiness for authentication and authorization system (e.g., JWT, OAuth)",
+        "Be ready to use Gemini AI using the documentation from models/gemini-2.0-pro-exp or gemini-2.0-pro-exp-02-05",
+        "Use process.env to store the Gemini API key",
+        "Add backend API endpoints as needed to support front-end functionality"
+      ]
+    }
+  ],
+  "env": {
+    "AI_API_KEY": "process.env.GEMINI_API_KEY"
+  },
+  "notes": "Design the frontend with future extensibility in mind, enabling easy integration of real-time feedback, live previews, and download options. Keep components modular and logic clean."
+}

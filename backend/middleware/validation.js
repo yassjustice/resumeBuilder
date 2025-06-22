@@ -4,6 +4,7 @@
  */
 
 const { body, param, validationResult } = require('express-validator');
+const jwt = require('jsonwebtoken');
 const { APIError } = require('./errorHandler');
 
 /**
@@ -185,11 +186,115 @@ const validatePDFRequest = [
   handleValidationErrors
 ];
 
+/**
+ * User registration validation rules
+ */
+const validateUser = [
+  body('firstName')
+    .notEmpty()
+    .withMessage('First name is required')
+    .isLength({ min: 2, max: 50 })
+    .withMessage('First name must be between 2 and 50 characters'),
+  
+  body('lastName')
+    .notEmpty()
+    .withMessage('Last name is required')
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Last name must be between 2 and 50 characters'),
+  
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email address'),
+  
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one lowercase letter, one uppercase letter, and one number'),
+  
+  handleValidationErrors
+];
+
+/**
+ * User login validation rules
+ */
+const validateLogin = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email address'),
+  
+  body('password')
+    .notEmpty()
+    .withMessage('Password is required'),
+  
+  handleValidationErrors
+];
+
+/**
+ * Text extraction validation rules
+ */
+const validateTextExtraction = [
+  body('text')
+    .notEmpty()
+    .withMessage('Text content is required')
+    .isLength({ min: 10, max: 50000 })
+    .withMessage('Text must be between 10 and 50,000 characters'),
+  
+  handleValidationErrors
+];
+
+/**
+ * JWT Authentication middleware
+ */
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return next(new APIError('Access token required', 401));
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return next(new APIError('Invalid or expired token', 403));
+    }
+    req.user = user;
+    next();
+  });
+};
+
+/**
+ * CV tailoring validation rules
+ */
+const validateCVTailoring = [
+  body('cv')
+    .notEmpty()
+    .withMessage('CV data is required'),
+  
+  body('jobOffer')
+    .notEmpty()
+    .withMessage('Job offer data is required'),
+  
+  body('additionalRequirements')
+    .optional()
+    .isLength({ max: 1000 })
+    .withMessage('Additional requirements cannot exceed 1000 characters'),
+  
+  handleValidationErrors
+];
+
 module.exports = {
   validateCV,
   validateCVId,
   validateCVIdForPreview,
   validateTheme,
   validatePDFRequest,
-  handleValidationErrors
+  handleValidationErrors,
+  validateUser,
+  validateLogin,
+  validateTextExtraction,
+  validateCVTailoring,
+  authenticateToken
 };

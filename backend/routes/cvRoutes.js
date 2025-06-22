@@ -8,6 +8,7 @@ const router = express.Router();
 
 // Import controllers
 const cvController = require('../controllers/cvController');
+const { authenticateToken } = require('../middleware/validation');
 
 // Import validation middleware
 const { 
@@ -23,6 +24,27 @@ const {
  * @access  Public
  */
 router.get('/', cvController.getAllCVs);
+
+/**
+ * @route   GET /api/cvs/full
+ * @desc    Get user's full CV
+ * @access  Public (temporarily for testing)
+ */
+router.get('/full', cvController.getUserFullCV);
+
+/**
+ * @route   POST /api/cvs/full
+ * @desc    Save/update user's full CV
+ * @access  Public (temporarily for testing)
+ */
+router.post('/full', cvController.saveUserFullCV);
+
+/**
+ * @route   POST /api/cvs/generate-pdf
+ * @desc    Generate PDF from CV data (without saving)
+ * @access  Public
+ */
+router.post('/generate-pdf', cvController.generatePDFFromData);
 
 /**
  * @route   POST /api/cv

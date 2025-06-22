@@ -103,6 +103,13 @@ const cvSchema = new mongoose.Schema({
     required: true
   },
   
+  // User Association
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false // Optional for backward compatibility
+  },
+  
   // CV Content
   personalInfo: {
     type: personalInfoSchema,
@@ -158,6 +165,7 @@ cvSchema.pre('save', function(next) {
 // Index for better query performance
 cvSchema.index({ language: 1, theme: 1 });
 cvSchema.index({ createdAt: -1 });
+cvSchema.index({ userId: 1 });
 
 const CV = mongoose.model('CV', cvSchema);
 

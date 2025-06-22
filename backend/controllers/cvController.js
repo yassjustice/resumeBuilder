@@ -785,6 +785,173 @@ const generatePDFEmbed = async (req, res, next) => {
  * @route   GET /api/cv/:id/pdf-viewer
  * @access  Public
  */
+
+/**
+ * @desc    Get user's full CV
+ * @route   GET /api/cvs/full
+ * @access  Private
+ */
+const getUserFullCV = async (req, res, next) => {
+  try {
+    // For authenticated users, use user ID; for anonymous users, return the latest CV
+    let cv;
+    
+    if (req.user && req.user.id) {
+      // Authenticated user - find their specific CV
+      cv = await CV.findOne({ userId: req.user.id, isActive: true })
+        .select('-__v')
+        .lean();
+    } else {
+      // Anonymous user - find the most recent CV (for testing)
+      cv = await CV.findOne({ isActive: true })
+        .sort({ createdAt: -1 })
+        .select('-__v')
+        .lean();
+    }
+    
+    if (!cv) {
+      return res.json({
+        success: true,
+        data: { cv: null },
+        message: 'No CV found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: { cv }
+    });
+  } catch (error) {
+    next(new APIError('Failed to get user CV', 500, error.message));
+  }
+};
+
+/**
+ * @desc    Save/update user's full CV
+ * @route   POST /api/cvs/full
+ * @access  Public (temporarily for testing)
+ */
+const saveUserFullCV = async (req, res, next) => {
+  try {
+    const userId = req.user?.id || null; // Use null instead of string for anonymous
+    const cvData = req.body;
+    
+    console.log('💾 Saving CV data:', JSON.stringify(cvData, null, 2));
+    
+    // Add user ID and default metadata
+    const cvToSave = {
+      ...cvData,
+      isActive: true,
+      updatedAt: new Date()
+    };
+
+    // Only add userId if we have a real user
+    if (userId) {
+      cvToSave.userId = userId;
+    }
+    
+    // For anonymous users, try to find by a unique identifier or just create new
+    let cv;
+    if (userId) {
+      cv = await CV.findOne({ userId, isActive: true });
+    } else {
+      // For anonymous users, always create a new CV
+      cv = null;
+    }
+    
+    if (cv) {
+      // Update existing CV
+      Object.assign(cv, cvToSave);
+      await cv.save();
+      console.log('✅ CV updated successfully');
+    } else {
+      // Create new CV
+      cv = new CV(cvToSave);
+      await cv.save();
+      console.log('✅ CV created successfully');
+    }
+    
+    res.json({
+      success: true,
+      data: { cv },
+      message: cv.isNew ? 'CV created successfully' : 'CV updated successfully'
+    });
+  } catch (error) {
+    console.error('❌ CV save error:', error);
+    next(new APIError('Failed to save CV', 500, error.message));
+  }
+};
+
+/**
+ * @desc    Generate PDF from CV data without saving
+ * @route   POST /api/cvs/generate-pdf
+ * @access  Public
+ */
+const generatePDFFromData = async (req, res, next) => {
+  try {
+    console.log('🔄 PDF generation request received');
+    console.log('📋 Request method:', req.method);
+    console.log('📋 Request headers:', req.headers);
+    console.log('📋 Request body keys:', Object.keys(req.body));
+      const cvData = req.body.cvData || req.body;
+    const options = req.body.options || {};
+    
+    console.log('📋 Extracted cvData type:', typeof cvData);
+    console.log('📋 Extracted cvData keys:', Object.keys(cvData || {}));
+    console.log('📋 cvData.personalInfo:', cvData?.personalInfo);
+    
+    if (!cvData) {
+      console.log('❌ No CV data provided');
+      console.log('📋 Request body:', req.body);
+      return res.status(400).json({ error: 'CV data is required' });
+    }
+      console.log('📋 CV data received for:', cvData.personalInfo?.name || `${cvData.personalInfo?.firstName} ${cvData.personalInfo?.lastName}`);
+    
+    // Validate essential CV data - check for either name or firstName
+    if (!cvData.personalInfo || (!cvData.personalInfo.name && !cvData.personalInfo.firstName)) {
+      console.log('❌ Invalid CV data - missing personal info');
+      console.log('📋 Available personalInfo:', cvData.personalInfo);
+      return res.status(400).json({ error: 'Invalid CV data - personal info required' });
+    }
+    
+    // Generate PDF using the existing service (single call)
+    console.log('🔄 Generating PDF...');
+    const pdfBuffer = await pdfService.generatePDF(cvData, options);
+    
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      console.log('❌ PDF generation returned empty buffer');
+      return res.status(500).json({ error: 'PDF generation failed - empty buffer' });
+    }
+    
+    console.log('✅ PDF generated successfully, size:', pdfBuffer.length);
+      // Set headers for PDF download - disable range requests
+    const fileName = cvData.personalInfo?.name 
+      ? `${cvData.personalInfo.name.replace(/\s+/g, '_')}_CV.pdf`
+      : 'CV.pdf';
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.setHeader('Accept-Ranges', 'none'); // Disable range requests
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    console.log('📤 Sending PDF response...');
+    res.end(pdfBuffer); // Use res.end() instead of res.send() for binary data
+    console.log('✅ PDF response sent successfully');
+    
+  } catch (error) {
+    console.error('❌ PDF generation error:', error);
+    console.error('❌ Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to generate PDF', 
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+};
+
 module.exports = {
   getAllCVs,
   createCV,
@@ -799,5 +966,8 @@ module.exports = {
   updateCVTheme,
   generatePDFPreview,
   generatePDFForViewer,
-  generatePDFEmbed
+  generatePDFEmbed,
+  getUserFullCV,
+  saveUserFullCV,
+  generatePDFFromData
 };

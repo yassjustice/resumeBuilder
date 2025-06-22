@@ -16,6 +16,8 @@ dotenv.config();
 // Import routes
 const cvRoutes = require('./routes/cvRoutes');
 const themeRoutes = require('./routes/themeRoutes');
+const authRoutes = require('./routes/authRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -61,6 +63,24 @@ app.use('/api/cvs/:id/pdf-precise', (req, res, next) => {
   next();
 });
 
+// Additional CORS headers for PDF generation endpoint
+app.use('/api/cvs/generate-pdf', (req, res, next) => {
+  console.log('🔄 CORS middleware for PDF generation route hit:', req.method, req.originalUrl);
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Cache-Control, Pragma, Authorization');
+  res.header('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  
+  if (req.method === 'OPTIONS') {
+    console.log('✅ Responding to OPTIONS preflight for PDF generation');
+    return res.status(200).end();
+  }
+  
+  console.log('🔄 Continuing to PDF generation route handler...');
+  next();
+});
+
 // Logging middleware
 app.use(morgan('combined'));
 
@@ -71,6 +91,10 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Routes
 app.use('/api/cvs', cvRoutes);
 app.use('/api/themes', themeRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/files', aiRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/download', aiRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
