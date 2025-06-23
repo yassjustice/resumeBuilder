@@ -79,16 +79,17 @@ export const CVBuilderPage = () => {
   };
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
-    if (!file) return;
-
-    const allowedTypes = [
+    if (!file) return;    const allowedTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain'
+      'text/plain',
+      'image/jpeg',
+      'image/jpg',
+      'image/png'
     ];
 
     if (!allowedTypes.includes(file.type)) {
-      setUploadError('Please upload a PDF, DOCX, or TXT file');
+      setUploadError('Please upload a PDF, DOCX, TXT, JPG, or PNG file');
       return;
     }
 
@@ -342,7 +343,7 @@ export const CVBuilderPage = () => {
                     Click to upload your CV
                   </p>
                   <p className="text-sm text-gray-600">
-                    Supports PDF, DOCX, and TXT files (max 10MB)
+                    Supports PDF, DOCX, TXT, JPG, and PNG files (max 10MB)
                   </p>
                 </label>
                 {isProcessing && (

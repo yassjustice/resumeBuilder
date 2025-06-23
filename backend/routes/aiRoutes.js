@@ -24,12 +24,14 @@ const upload = multer({
   storage: storage,
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB limit
-  },
-  fileFilter: (req, file, cb) => {
+  },  fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain'
+      'text/plain',
+      'image/jpeg',
+      'image/jpg', 
+      'image/png'
     ];
     
     if (allowedTypes.includes(file.mimetype)) {
@@ -42,6 +44,111 @@ const upload = multer({
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+/**
+ * Extract text from image-based PDF using Gemini Vision OCR
+ * @param {Buffer} pdfBuffer - PDF file buffer
+ * @returns {Promise<string>} - Extracted text
+ */
+async function extractTextFromImagePDF(pdfBuffer) {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error('Gemini API key not configured for OCR');
+    }
+
+    // Convert PDF to base64 for Gemini Vision
+    const base64Data = pdfBuffer.toString('base64');
+    
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    
+    const prompt = `
+Extract all text content from this CV/resume document. 
+Focus on capturing:
+- Personal information (name, contact details)
+- Professional summary or objective
+- Work experience (job titles, companies, dates, responsibilities)
+- Education details
+- Skills and competencies
+- Certifications and achievements
+- Any other relevant career information
+
+Return the extracted text in a clean, readable format while preserving the structure and hierarchy of information.
+`;
+
+    const imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType: "application/pdf"
+      }
+    };
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const response = await result.response;
+    const extractedText = response.text();
+    
+    console.log('✅ Gemini Vision OCR completed');
+    console.log('📝 Extracted text length:', extractedText.length);
+    
+    return extractedText;
+    
+  } catch (error) {
+    console.error('❌ Gemini Vision OCR failed:', error);
+    throw new Error(`OCR extraction failed: ${error.message}`);
+  }
+}
+
+/**
+ * Extract text from image files using Gemini Vision OCR
+ * @param {Buffer} imageBuffer - Image file buffer
+ * @param {string} mimeType - Image MIME type
+ * @returns {Promise<string>} - Extracted text
+ */
+async function extractTextFromImage(imageBuffer, mimeType) {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error('Gemini API key not configured for OCR');
+    }
+
+    // Convert image to base64 for Gemini Vision
+    const base64Data = imageBuffer.toString('base64');
+    
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    
+    const prompt = `
+Extract all text content from this CV/resume image. 
+Focus on capturing:
+- Personal information (name, contact details)
+- Professional summary or objective  
+- Work experience (job titles, companies, dates, responsibilities)
+- Education details
+- Skills and competencies
+- Certifications and achievements
+- Any other relevant career information
+
+Return the extracted text in a clean, readable format while preserving the structure and hierarchy of information.
+`;
+
+    const imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType: mimeType
+      }
+    };
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const response = await result.response;
+    const extractedText = response.text();
+    
+    console.log('✅ Gemini Vision image OCR completed');
+    console.log('📝 Extracted text length:', extractedText.length);
+    
+    return extractedText;
+    
+  } catch (error) {
+    console.error('❌ Gemini Vision image OCR failed:', error);
+    throw new Error(`Image OCR extraction failed: ${error.message}`);
+  }
+}
 
 /**
  * @route   GET /api/ai/test
@@ -100,22 +207,36 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     console.log('✅ File uploaded successfully:', req.file.filename);
     const filePath = req.file.path;
-    let extractedText = '';
-
-    // Extract text based on file type
+    let extractedText = '';    // Extract text based on file type
     if (req.file.mimetype === 'application/pdf') {
       console.log('📄 Processing PDF file...');
       const dataBuffer = await fs.readFile(filePath);
-      const pdfData = await pdfParse(dataBuffer);
-      extractedText = pdfData.text;
+      
+      try {
+        // First try to extract text using pdf-parse (for text-based PDFs)
+        const pdfData = await pdfParse(dataBuffer);
+        extractedText = pdfData.text;
+        
+        // If no text extracted (likely image-based PDF), use Gemini Vision
+        if (!extractedText || extractedText.trim().length < 50) {
+          console.log('📸 PDF appears to be image-based, using Gemini Vision OCR...');
+          extractedText = await extractTextFromImagePDF(dataBuffer);
+        }
+      } catch (pdfParseError) {
+        console.log('⚠️ PDF parsing failed, trying Gemini Vision OCR...');
+        extractedText = await extractTextFromImagePDF(dataBuffer);
+      }
     } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       console.log('📄 Processing DOCX file...');
       const dataBuffer = await fs.readFile(filePath);
       const result = await mammoth.extractRawText({ buffer: dataBuffer });
-      extractedText = result.value;
-    } else if (req.file.mimetype === 'text/plain') {
+      extractedText = result.value;    } else if (req.file.mimetype === 'text/plain') {
       console.log('📄 Processing TXT file...');
       extractedText = await fs.readFile(filePath, 'utf8');
+    } else if (req.file.mimetype.startsWith('image/')) {
+      console.log('📸 Processing image file with Gemini Vision OCR...');
+      const dataBuffer = await fs.readFile(filePath);
+      extractedText = await extractTextFromImage(dataBuffer, req.file.mimetype);
     }
 
     console.log('📝 Extracted text length:', extractedText.length);
@@ -230,16 +351,45 @@ You are an expert CV/Resume parser and career consultant. Extract structured inf
 
 CRITICAL EXTRACTION INSTRUCTIONS:
 
-🎯 JOB TITLE EXTRACTION:
-- Extract the SPECIFIC, EXACT job title from the CV - never paraphrase or generalize
-- Look for the most recent job title or the title they identify themselves as
-- Use the ACTUAL title they held, not the general field they work in
-- Examples: "Senior React Developer" NOT "Software Developer", "Digital Marketing Specialist" NOT "Marketing Professional"
-- If the CV shows "Full Stack Developer at Company X", use "Full Stack Developer"
-- If they say "I am a UX/UI Designer", use "UX/UI Designer"
-- Prioritize: 1) Current job title 2) Most recent title 3) Self-described title 4) Inferred from experience
-- Maintain seniority level exactly as stated (Junior, Senior, Lead, Principal, etc.)
-- If no clear title exists, create one based on their most prominent role and experience level
+🎯 JOB TITLE DETERMINATION - CRITICAL CONTEXTUAL ANALYSIS:
+- Analyze the ENTIRE CV to determine the most accurate professional title
+- Consider: Career progression, experience level, primary expertise, industry, and current role
+- DO NOT just copy the most recent job title - SYNTHESIZE from the whole career story
+- Look at the full context: years of experience, progression pattern, skill set, achievements
+
+ANALYSIS STEPS:
+1. EXPERIENCE ANALYSIS: Review all work experience to identify career pattern and progression
+2. SKILL ASSESSMENT: Examine skills to determine primary expertise and specialization 
+3. SENIORITY EVALUATION: Calculate total years of experience and leadership indicators
+4. INDUSTRY IDENTIFICATION: Determine the professional field/industry from experience
+5. SPECIALIZATION FOCUS: Identify what they're most skilled/experienced in
+
+TITLE GENERATION LOGIC:
+- 0-2 years experience: "Junior [Specialization]" or "[Specialization]"
+- 3-5 years experience: "[Specialization]" or "Mid-level [Specialization]"  
+- 6-8 years experience: "Senior [Specialization]"
+- 9+ years experience: "Senior [Specialization]" or "Lead [Specialization]"
+- Management/Leadership experience: Add "Lead", "Manager", or "Director" as appropriate
+
+EXAMPLES OF CONTEXTUAL ANALYSIS:
+- If someone has 5 years of React development + Node.js backend work → "Full Stack Developer"
+- If someone has 7 years across multiple frontend frameworks + team lead role → "Senior Frontend Developer"
+- If someone has 3 years React + 2 years mobile apps → "Frontend & Mobile Developer"
+- If someone has 6 years marketing + specializes in social media → "Senior Digital Marketing Specialist"
+- If someone has 4 years data analysis + Python/SQL expertise → "Data Analyst"
+- If someone has 8 years + manages teams + various tech projects → "Senior Technical Lead"
+
+AVOID GENERIC TITLES:
+❌ "Professional", "Specialist", "Expert", "Consultant" (unless that's their actual role)
+❌ Just copying the field name like "Information Technology" or "Marketing"
+❌ Overly broad titles that don't reflect their specific expertise
+
+PRIORITIZE ACCURACY AND RELEVANCE:
+✅ Reflect their actual level of experience and expertise
+✅ Match their primary area of specialization
+✅ Include appropriate seniority level
+✅ Use industry-standard professional titles
+✅ Consider their career trajectory and current capabilities
 
 🏷️ SKILLS CATEGORIZATION:
 - Create COMPLETELY DYNAMIC categories based on the specific skills found in THIS CV
@@ -470,11 +620,25 @@ ${additionalRequirements ? `Additional Requirements: ${additionalRequirements}` 
 
 CRITICAL TAILORING INSTRUCTIONS:
 
-🎯 JOB TITLE ALIGNMENT:
-- Adjust the job title in personalInfo.title to align with the target role
-- Use the EXACT title from the job offer or a closely related industry-standard title
-- Maintain professional accuracy - don't overstate or understate experience level
-- Examples: If applying for "Senior React Developer", ensure title reflects appropriate seniority
+🎯 CONTEXTUAL JOB TITLE ALIGNMENT:
+- Analyze BOTH the candidate's experience AND the target job requirements
+- Create a title that accurately reflects their experience level while aligning with the target role
+- DO NOT just copy the job posting title - ensure it matches their actual experience level
+- Consider the candidate's years of experience, expertise, and career progression
+
+ALIGNMENT LOGIC:
+1. If target role is "Senior Developer" but candidate has 2 years experience → use "Developer" or "Junior Developer"
+2. If target role is "Developer" but candidate has 8 years + leadership → use "Senior Developer"
+3. If target role is specific (e.g., "React Developer") and candidate has React expertise → align exactly
+4. If target role is broad but candidate is specialized → use their specialization
+
+EXAMPLES:
+- Target: "Software Engineer" + Candidate: 6 years full-stack → "Senior Full Stack Developer"
+- Target: "Senior Marketing Manager" + Candidate: 3 years marketing → "Digital Marketing Specialist"  
+- Target: "Data Scientist" + Candidate: data analysis background → "Data Analyst" (if no ML/science experience)
+- Target: "Frontend Developer" + Candidate: 5 years React/Vue → "Senior Frontend Developer"
+
+MAINTAIN HONESTY: Never inflate titles beyond the candidate's actual experience level
 
 🏷️ SKILLS OPTIMIZATION:
 - Prioritize skills mentioned in the job offer across ALL skill categories
