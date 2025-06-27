@@ -9,24 +9,24 @@ import { Link } from 'react-router-dom';
 
 export const DashboardPage = () => {
   const { user } = useAuth();
-  const { cvData, isLoading, loadUserCV } = useCV();
-  const location = useLocation();
-  const [stats, setStats] = useState({
+  const { cvData, originalCVData, isLoading, loadUserCV, clearAllCVData } = useCV();
+  const location = useLocation();  const [stats, setStats] = useState({
     totalCVs: 0,
     jobApplications: 0,
-    lastUpdate: null
-  });  useEffect(() => {
+    lastUpdate: null,
+    isClearing: false
+  });useEffect(() => {
     if (user) {
-      loadUserCV();
+      console.log('🔄 Dashboard: Loading CV for user:', user);
+      loadUserCV(true); // Force refresh from backend
     }
-  }, [user, loadUserCV]);
-  // Force refresh when coming from certain pages
+  }, [user, loadUserCV]);  // Force refresh when coming from certain pages
   useEffect(() => {
     // If coming from CV builder or if location state indicates refresh needed
     if (location.state?.refreshCV) {
       console.log('🔄 Dashboard: Forced refresh requested');
       if (user) {
-        loadUserCV();
+        loadUserCV(true); // Force refresh from backend
       }
       // Clear the state to prevent unnecessary re-renders
       window.history.replaceState({}, document.title);
@@ -43,15 +43,16 @@ export const DashboardPage = () => {
 
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [user, loadUserCV]);
-  useEffect(() => {
+  }, [user, loadUserCV]);  useEffect(() => {
     // Update stats when cvData changes
+    console.log('📊 Dashboard: Updating stats with CV data:', cvData);
+    console.log('📊 Dashboard: Original CV data for stats:', originalCVData);
     setStats({
       totalCVs: cvData ? 1 : 0,
       jobApplications: 0,
-      lastUpdate: cvData?.updatedAt || null
+      lastUpdate: cvData?.updatedAt || originalCVData?.updatedAt || null
     });
-  }, [cvData]);
+  }, [cvData, originalCVData]);
 
   // Add refresh function
   const refreshCV = async () => {
@@ -67,13 +68,19 @@ export const DashboardPage = () => {
       icon: '📝',
       link: '/cv-builder',
       color: 'bg-blue-500 hover:bg-blue-600'
-    },
-    {
+    },    {
       title: 'Job Application',
-      description: 'Tailor CV for specific job opportunities',
+      description: 'Basic job application tools',
       icon: '🎯',
       link: '/job-application',
       color: 'bg-green-500 hover:bg-green-600'
+    },
+    {
+      title: 'AI Job Tailor',
+      description: 'Advanced AI-powered CV tailoring with cover letters',
+      icon: '🤖',
+      link: '/advanced-job-application',
+      color: 'bg-indigo-500 hover:bg-indigo-600'
     },
     {
       title: 'View Profile',
@@ -82,20 +89,29 @@ export const DashboardPage = () => {
       link: '/profile',
       color: 'bg-purple-500 hover:bg-purple-600'
     }
-  ];
-
-  const recentActivity = [
-    {
-      action: 'CV Updated',
-      date: new Date().toLocaleDateString(),
-      description: 'Last modified your professional CV'
-    },
-    {
+  ];  const recentActivity = React.useMemo(() => {
+    const activities = [];
+    
+    if (cvData) {
+      // Use original CV data for accurate skill counts
+      const skillsCount = originalCVData?.skills && typeof originalCVData.skills === 'object' 
+        ? Object.values(originalCVData.skills).flat().length
+        : (Array.isArray(cvData.skills) ? cvData.skills.length : 0);
+        
+      activities.push({
+        action: 'CV Updated',
+        date: stats.lastUpdate ? new Date(stats.lastUpdate).toLocaleDateString() : new Date().toLocaleDateString(),
+        description: `CV completed with ${cvData.experience?.length || 0} work experiences and ${skillsCount} skills`
+      });
+    }
+    
+    activities.push({
       action: 'Account Created',
       date: new Date(user?.createdAt || Date.now()).toLocaleDateString(),
       description: 'Welcome to CV Maker!'
-    }
-  ];
+    });
+      return activities;
+  }, [cvData, originalCVData, stats.lastUpdate, user?.createdAt]);
 
   if (isLoading) {
     return (
@@ -215,17 +231,52 @@ export const DashboardPage = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
-          >
-            <div className="flex justify-between items-center mb-4">
+          >            <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-gray-900">Your CV Status</h2>
-              <Button
-                onClick={refreshCV}
-                variant="outline"
-                size="sm"
-                disabled={isLoading}
-              >
-                {isLoading ? <LoadingSpinner size="sm" /> : '🔄 Refresh'}
-              </Button>
+              <div className="flex gap-2">                <Button
+                  onClick={async () => {
+                    console.log('🗑️ Dashboard: Clearing all CV data');
+                    setStats(prev => ({ ...prev, isClearing: true }));
+                    
+                    try {
+                      const result = await clearAllCVData();
+                      if (result.success) {
+                        console.log('✅ Dashboard: CV data cleared successfully');
+                        // Force refresh from backend after clearing
+                        await loadUserCV(true);
+                        console.log('✅ Dashboard: Page refreshed after clearing');
+                      } else {
+                        console.error('❌ Dashboard: Failed to clear CV data:', result.error);
+                      }
+                    } catch (error) {
+                      console.error('❌ Dashboard: Error during clear operation:', error);
+                    } finally {
+                      setStats(prev => ({ ...prev, isClearing: false }));
+                    }
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 border-red-200 hover:bg-red-50"
+                  disabled={isLoading || stats.isClearing}
+                >
+                  {stats.isClearing ? (
+                    <div className="flex items-center">
+                      <LoadingSpinner size="sm" />
+                      <span className="ml-2">Clearing...</span>
+                    </div>
+                  ) : (
+                    '🗑️ Clear & Start Fresh'
+                  )}
+                </Button>
+                <Button
+                  onClick={refreshCV}
+                  variant="outline"
+                  size="sm"
+                  disabled={isLoading}
+                >
+                  {isLoading ? <LoadingSpinner size="sm" /> : '🔄 Refresh'}
+                </Button>
+              </div>
             </div>
             <div className="bg-white rounded-lg shadow-md p-6">
               {cvData ? (
@@ -241,23 +292,56 @@ export const DashboardPage = () => {
                       <p className="text-sm text-gray-600">Your CV is complete and ready to use</p>
                     </div>
                   </div>
-                  
-                  {cvData.personalInfo && (
+                    {cvData.personalInfo && (
                     <div className="border-t pt-4">
                       <h4 className="font-medium text-gray-900 mb-2">CV Details</h4>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
+                      <div className="space-y-2 text-sm">                        <div>
                           <span className="font-medium">Name:</span> {cvData.personalInfo.firstName} {cvData.personalInfo.lastName}
                         </div>
-                        <div>
-                          <span className="font-medium">Email:</span> {cvData.personalInfo.email}
-                        </div>
+                        {cvData.personalInfo.title && (
+                          <div>
+                            <span className="font-medium">Title:</span> {cvData.personalInfo.title}
+                          </div>
+                        )}
+                        {cvData.personalInfo.email && (
+                          <div>
+                            <span className="font-medium">Email:</span> {cvData.personalInfo.email}
+                          </div>
+                        )}
                         <div>
                           <span className="font-medium">Experience:</span> {cvData.experience?.length || 0} positions
                         </div>
                         <div>
-                          <span className="font-medium">Skills:</span> {cvData.skills?.length || 0} skills
+                          <span className="font-medium">Education:</span> {cvData.education?.length || 0} entries
                         </div>
+                        <div>
+                          <span className="font-medium">Skills:</span> {
+                            // Use original CV data for accurate skill counts
+                            (() => {
+                              if (originalCVData?.skills && typeof originalCVData.skills === 'object') {
+                                return Object.values(originalCVData.skills).flat().length;
+                              } else if (Array.isArray(cvData.skills)) {
+                                return cvData.skills.length;
+                              }
+                              return 0;
+                            })()
+                          } skills
+                          {originalCVData?.skills && typeof originalCVData.skills === 'object' && Object.keys(originalCVData.skills).length > 0 && (
+                            <div className="ml-4 mt-1 text-xs text-gray-500">
+                              Categories: {Object.keys(originalCVData.skills).join(', ')}
+                            </div>
+                          )}
+                        </div>
+                        {cvData.languages && cvData.languages.length > 0 && (
+                          <div>
+                            <span className="font-medium">Languages:</span> {cvData.languages.length} languages
+                          </div>
+                        )}
+                        {cvData.certifications && cvData.certifications.length > 0 && (
+                          <div>
+                            <span className="font-medium">Certifications:</span> {cvData.certifications.length} certificates
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

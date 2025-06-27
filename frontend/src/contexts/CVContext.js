@@ -22,11 +22,11 @@ const cvReducer = (state, action) => {
       return {
         ...state,
         error: null,
-      };
-    case 'SET_FULL_CV':
+      };    case 'SET_FULL_CV':
       return {
         ...state,
-        fullCV: action.payload,
+        fullCV: action.payload.fullCV,
+        originalCV: action.payload.originalCV,
         loading: false,
         error: null,
       };
@@ -54,13 +54,23 @@ const cvReducer = (state, action) => {
         ...state,
         generatedCoverLetter: action.payload,
         loading: false,
-      };
-    case 'CLEAR_GENERATED_CONTENT':
+      };    case 'CLEAR_GENERATED_CONTENT':
       return {
         ...state,
         generatedCV: null,
         generatedCoverLetter: null,
         currentJobOffer: null,
+      };    case 'CLEAR_ALL_CV_DATA':
+      return {
+        ...state,
+        fullCV: null,
+        originalCV: null,
+        currentJobOffer: null,
+        generatedCV: null,
+        generatedCoverLetter: null,
+        loading: false,
+        aiProcessing: false,
+        error: null,
       };
     case 'SET_AI_PROCESSING':
       return {
@@ -74,6 +84,7 @@ const cvReducer = (state, action) => {
 
 const initialState = {
   fullCV: null,
+  originalCV: null, // Store original backend format for dashboard stats
   currentJobOffer: null,
   generatedCV: null,
   generatedCoverLetter: null,
@@ -91,14 +102,49 @@ export const CVProvider = ({ children }) => {
 
   const setError = (error) => {
     dispatch({ type: 'SET_ERROR', payload: error });
-  };
-  const clearError = useCallback(() => {
+  };  const clearError = useCallback(() => {
     dispatch({ type: 'CLEAR_ERROR' });
-  }, []);  // Load user's CV data
-  const loadUserCV = useCallback(async () => {
+  }, []);
+
+  // Clear all CV data (useful for starting fresh)
+  const clearAllCVData = useCallback(async () => {
+    try {
+      console.log('🗑️ CVContext: Clearing all CV data');
+      
+      // Try to delete from backend first
+      try {
+        const result = await api.deleteCV();
+        console.log('✅ CVContext: Backend CV data cleared:', result);
+      } catch (error) {
+        console.warn('⚠️ CVContext: Could not clear backend data (may not exist):', error.message);
+      }
+      
+      // Clear local state
+      dispatch({ 
+        type: 'CLEAR_ALL_CV_DATA'
+      });
+      
+      // Clear any local storage cache
+      localStorage.removeItem('cvData');
+      
+      console.log('✅ CVContext: All CV data cleared successfully');
+      return { success: true };
+    } catch (error) {
+      console.error('❌ CVContext: Error clearing CV data:', error);
+      return { success: false, error: error.message };
+    }
+  }, []);
+
+  // Load user's CV data
+  const loadUserCV = useCallback(async (forceRefresh = false) => {
     try {
       setLoading(true);
-      console.log('🔍 CVContext: Loading user CV...');
+      console.log('🔍 CVContext: Loading user CV...', forceRefresh ? '(forced refresh)' : '');
+      
+      // Clear any cached data if force refresh
+      if (forceRefresh) {
+        localStorage.removeItem('cvData');
+      }
       
       // Try to get user's CV from backend
       const response = await api.getCV();
@@ -106,30 +152,49 @@ export const CVProvider = ({ children }) => {
       
       // The response structure is {success: true, data: {cv: {...}}}
       const cv = response?.data?.cv || response?.cv;
-      
-      if (cv) {
+        if (cv) {
         // Transform backend CV structure to frontend structure
         const transformedCV = transformCVFromBackend(cv);
         console.log('🔄 CVContext: Transformed CV:', transformedCV);
-        dispatch({ type: 'SET_FULL_CV', payload: transformedCV });
+        dispatch({ 
+          type: 'SET_FULL_CV', 
+          payload: { 
+            fullCV: transformedCV, 
+            originalCV: cv 
+          } 
+        });
         return { success: true, cv: transformedCV };
       } else {
-        console.log('⚠️ CVContext: No CV found in response');
-        dispatch({ type: 'SET_FULL_CV', payload: null });
+        console.log('⚠️ CVContext: No CV found in response - starting fresh');
+        dispatch({ 
+          type: 'SET_FULL_CV', 
+          payload: { 
+            fullCV: null, 
+            originalCV: null 
+          } 
+        });
         return { success: true, cv: null };
       }
     } catch (error) {
-      console.error('❌ CVContext: Error loading CV:', error);
-      // If no CV exists, that's okay - user will create one
-      dispatch({ type: 'SET_FULL_CV', payload: null });
+      console.error('❌ CVContext: Error loading CV:', error);      // If no CV exists or error occurred, clear everything and start fresh
+      console.log('🗑️ CVContext: Clearing CV data due to error');
+      dispatch({ 
+        type: 'SET_FULL_CV', 
+        payload: { 
+          fullCV: null, 
+          originalCV: null 
+        } 
+      });
       return { success: true, cv: null };
     } finally {
       setLoading(false);
     }
   }, []);
-
   // Transform backend CV structure to frontend structure
   const transformCVFromBackend = (backendCV) => {
+    console.log('🔄 CVContext: Original backend CV:', backendCV);
+    console.log('🔄 CVContext: Backend skills format:', backendCV.skills);
+    
     const {
       personalInfo = {},
       summary = '',
@@ -143,41 +208,62 @@ export const CVProvider = ({ children }) => {
     // Parse name into firstName and lastName
     const nameParts = (personalInfo.name || '').split(' ');
     const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
-
-    return {
+    const lastName = nameParts.slice(1).join(' ') || '';    const result = {
       personalInfo: {
         firstName,
         lastName,
+        title: personalInfo.title || '', // Add missing professional title
         email: personalInfo.contact?.email || '',
         phone: personalInfo.contact?.phone || '',
         location: personalInfo.contact?.location || '',
         linkedin: personalInfo.contact?.linkedin || '',
         website: personalInfo.contact?.portfolio || ''
       },
-      summary,
-      experience: experience.map(exp => ({
-        company: exp.company || '',
-        position: exp.title || '',
-        startDate: exp.period ? exp.period.split(' - ')[0] || '' : '',
-        endDate: exp.period ? exp.period.split(' - ')[1] || '' : '',
-        description: exp.responsibilities?.join('. ') || '',
-        location: ''
-      })),
-      education: education.map(edu => ({
-        institution: edu.institution || '',
-        degree: edu.degree || '',
-        field: edu.field || '',
-        startDate: edu.period ? edu.period.split(' - ')[0] || '' : '',
-        endDate: edu.period ? edu.period.split(' - ')[1] || '' : '',
-        grade: edu.grade || ''
-      })),
-      skills: (skills.technical || []).map(skillName => ({
-        name: skillName,
-        level: 'Intermediate'
-      })),
+      summary,      experience: experience.map(exp => {
+        // Parse period more robustly
+        let startDate = '', endDate = '';
+        if (exp.period) {
+          const parts = exp.period.split(' - ');
+          startDate = parts[0]?.trim() || '';
+          endDate = parts[1]?.trim() || '';
+          // Handle "Present" case
+          if (endDate.toLowerCase() === 'present') {
+            endDate = 'Present';
+          }
+        }
+        
+        return {
+          company: exp.company || '',
+          position: exp.title || '',
+          startDate,
+          endDate,
+          description: exp.responsibilities?.join('. ') || '',
+          location: exp.location || ''
+        };
+      }),
+      education: education.map(edu => {
+        // Parse period more robustly
+        let startDate = '', endDate = '';
+        if (edu.period) {
+          const parts = edu.period.split(' - ');
+          startDate = parts[0]?.trim() || '';
+          endDate = parts[1]?.trim() || '';
+          // Handle "Present" case
+          if (endDate.toLowerCase() === 'present') {
+            endDate = 'Present';
+          }
+        }
+        
+        return {
+          institution: edu.institution || '',
+          degree: edu.degree || '',
+          field: edu.field || '',
+          startDate,
+          endDate,
+          grade: edu.grade || ''
+        };      }),      skills: skills || {}, // Keep original format - normalize in CV Builder
       languages: languages.map(lang => ({
-        name: lang.language || '',
+        name: lang.language || lang.name || '',
         level: lang.level || 'Intermediate'
       })),
       certifications: certifications.map(cert => ({
@@ -187,6 +273,13 @@ export const CVProvider = ({ children }) => {
         url: cert.url || ''
       }))
     };
+    
+    console.log('🔄 CVContext: Transformed CV skills:', result.skills);
+    console.log('🔄 CVContext: Transformed CV skills type:', typeof result.skills);
+    console.log('🔄 CVContext: Skills categories:', Object.keys(result.skills || {}));
+    console.log('🔄 CVContext: Total skills count:', Object.values(result.skills || {}).flat().length);
+    
+    return result;
   };
 
   // Extract CV from uploaded file
@@ -201,12 +294,19 @@ export const CVProvider = ({ children }) => {
       if (!uploadResponse.extractedText) {
         throw new Error('No text could be extracted from the file');
       }
-      
-      // Extract structured CV data from text using AI
+        // Extract structured CV data from text using AI
       const extractedData = await api.extractCVFromText(uploadResponse.extractedText);
+      console.log('🤖 CVContext: AI extraction response (file):', extractedData);
+      console.log('🤖 CVContext: AI extracted skills (file):', extractedData?.skills);
       
       // Update context with extracted data
-      dispatch({ type: 'SET_FULL_CV', payload: extractedData });
+      dispatch({ 
+        type: 'SET_FULL_CV', 
+        payload: { 
+          fullCV: extractedData, 
+          originalCV: extractedData 
+        } 
+      });
       
       return { success: true, cv: extractedData };
     } catch (error) {
@@ -223,12 +323,19 @@ export const CVProvider = ({ children }) => {
     try {
       setLoading(true);
       clearError();
-      
-      // Extract structured CV data from text using AI
+        // Extract structured CV data from text using AI
       const extractedData = await api.extractCVFromText(text);
+      console.log('🤖 CVContext: AI extraction response (text):', extractedData);
+      console.log('🤖 CVContext: AI extracted skills (text):', extractedData?.skills);
       
       // Update context with extracted data
-      dispatch({ type: 'SET_FULL_CV', payload: extractedData });
+      dispatch({ 
+        type: 'SET_FULL_CV', 
+        payload: { 
+          fullCV: extractedData, 
+          originalCV: extractedData 
+        } 
+      });
       
       return { success: true, cv: extractedData };
     } catch (error) {
@@ -238,24 +345,50 @@ export const CVProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
-  // Update CV data in context
+  }, []);  // Update CV data in context
   const updateCV = useCallback((cvData) => {
-    dispatch({ type: 'SET_FULL_CV', payload: cvData });
-  }, []);  // Save CV data to backend
+    dispatch({ 
+      type: 'SET_FULL_CV', 
+      payload: { 
+        fullCV: cvData, 
+        originalCV: cvData 
+      } 
+    });
+  }, []);// Save CV data to backend
   const saveCV = useCallback(async (cvData) => {
     try {
       setLoading(true);
-      
-      // Transform frontend CV structure to backend structure
+        // Transform frontend CV structure to backend structure
       const transformedCV = transformCVForBackend(cvData);
+      console.log('💾 CVContext: Saving CV with skills:', transformedCV.skills);
+      console.log('💾 CVContext: Skills categories:', Object.keys(transformedCV.skills || {}));
+      
+      console.log('💾 CVContext: Saving CV to backend');
       
       // Save CV to backend
       const response = await api.saveCV(transformedCV);
-      dispatch({ type: 'SET_FULL_CV', payload: cvData }); // Keep original structure in frontend
-      return { success: true, cv: response.cv || cvData };
+      
+      console.log('📤 CVContext: Backend response:', response);
+      
+      // Backend returns { success: true, data: { cv: ... } }
+      const savedCV = response.data?.cv || response.cv || transformedCV;
+      console.log('💾 CVContext: Saved CV skills format:', savedCV.skills);
+      
+      // Update the context with both the UI format and the backend format
+      dispatch({ 
+        type: 'SET_FULL_CV', 
+        payload: { 
+          fullCV: cvData,  // Keep UI format for the builder
+          originalCV: savedCV  // Store backend format for dashboard stats
+        } 
+      });
+      
+      console.log('✅ CVContext: CV saved and context updated');
+      
+      return { success: true, cv: savedCV };
     } catch (error) {
       const errorMessage = error.message || 'Failed to save CV';
+      console.error('❌ CVContext: Save error:', error);
       setError(errorMessage);
       return { success: false, error: errorMessage };
     } finally {
@@ -292,13 +425,16 @@ export const CVProvider = ({ children }) => {
     
     return null;
   };
-
   // Transform frontend CV structure to backend structure
   const transformCVForBackend = (frontendCV) => {
+    console.log('🔄 CVContext: Frontend CV to save:', frontendCV);
+    console.log('🔄 CVContext: Frontend CV skills:', frontendCV.skills);
+    
     const {
       personalInfo: {
         firstName = '',
         lastName = '',
+        title = '', // Add missing title field
         email = '',
         phone = '',
         location = '',
@@ -311,19 +447,29 @@ export const CVProvider = ({ children }) => {
       skills = [],
       languages = [],
       certifications = []
-    } = frontendCV;
-
-    // Extract job title from summary or use the first job position
-    const extractedTitle = extractJobTitleFromSummary(summary);
+    } = frontendCV;    // Extract job title from user input or from summary or use the first job position
+    const userProvidedTitle = title || extractJobTitleFromSummary(summary);
     const firstJobTitle = experience.length > 0 ? experience[0].position : null;
-    const jobTitle = extractedTitle || firstJobTitle || 'Professional';    // Handle skills - use utility function for smart categorization
+    const jobTitle = userProvidedTitle || firstJobTitle || 'Professional';
+    
+    console.log('🔄 CVContext: Job title determination:', {
+      userProvided: title,
+      extracted: extractJobTitleFromSummary(summary),
+      firstJob: firstJobTitle,
+      final: jobTitle
+    });    // Handle skills - use utility function for smart categorization
     let categorizedSkills;
+    console.log('🔄 CVContext: Processing skills for backend:', skills);
+    console.log('🔄 CVContext: Skills type:', typeof skills, 'isArray:', Array.isArray(skills));
+    
     if (typeof skills === 'object' && skills !== null && !Array.isArray(skills)) {
       // Skills is already categorized from AI - use it as is
       categorizedSkills = skills;
+      console.log('🔄 CVContext: Using already categorized skills');
     } else {
       // Use utility function to categorize skills from array format
       categorizedSkills = categorizeSkillsArray(Array.isArray(skills) ? skills : []);
+      console.log('🔄 CVContext: Categorized skills from array:', categorizedSkills);
     }
 
     // Remove empty categories
@@ -332,6 +478,8 @@ export const CVProvider = ({ children }) => {
         delete categorizedSkills[key];
       }
     });
+    
+    console.log('🔄 CVContext: Final skills for backend:', categorizedSkills);
 
     return {
       language: 'en', // Default language
@@ -522,16 +670,17 @@ export const CVProvider = ({ children }) => {
       } else {
         errorMessage = error.message || 'Failed to download CV';
       }
-      
-      setError(errorMessage);
+        setError(errorMessage);
       return { success: false, error: errorMessage };
     }
   };
-  const value = {
-    ...state,
+
+  const value = {...state,
     cvData: state.fullCV,
+    originalCVData: state.originalCV, // Add original CV data for dashboard
     isLoading: state.loading,
     loadUserCV,
+    clearAllCVData,
     extractCVFromFile,
     extractCVFromText,
     updateCV,

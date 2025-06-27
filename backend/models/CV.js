@@ -48,15 +48,11 @@ const projectSchema = new mongoose.Schema({
   keyFeatures: [{ type: String, trim: true }]
 }, { _id: false });
 
-// Skills Schema
-const skillsSchema = new mongoose.Schema({
-  frontend: [{ type: String, trim: true }],
-  backend: [{ type: String, trim: true }],
-  databases: [{ type: String, trim: true }],
-  cloud: [{ type: String, trim: true }],
-  tools: [{ type: String, trim: true }],
-  other: [{ type: String, trim: true }]
-}, { _id: false });
+// Skills Schema - More flexible to accept dynamic categories
+const skillsSchema = new mongoose.Schema({}, { 
+  strict: false, // Allow dynamic fields
+  _id: false 
+});
 
 // Education Schema
 const educationSchema = new mongoose.Schema({

@@ -31,10 +31,10 @@ const Header = () => {
     { name: 'Home', path: '/', icon: null },
     { name: 'Features', path: '#features', icon: SparklesIcon },
   ];
-
   const privateNavItems = [
     { name: 'Dashboard', path: '/dashboard', icon: DocumentTextIcon },
     { name: 'CV Builder', path: '/cv-builder', icon: SparklesIcon },
+    { name: 'AI Job Tailor', path: '/advanced-job-application', icon: SparklesIcon },
     { name: 'Profile', path: '/profile', icon: UserIcon },
   ];
 

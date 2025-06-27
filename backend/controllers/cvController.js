@@ -883,6 +883,41 @@ const saveUserFullCV = async (req, res, next) => {
 };
 
 /**
+ * @desc    Delete user's full CV
+ * @route   DELETE /api/cvs/full
+ * @access  Public (temporarily for testing)
+ */
+const deleteUserFullCV = async (req, res, next) => {
+  try {
+    const userId = req.user?.id || null;
+    
+    console.log('🗑️ Deleting CV data for user:', userId);
+    
+    let result;
+    if (userId) {
+      // Delete user's CV
+      result = await CV.deleteMany({ userId, isActive: true });
+      console.log('✅ CV deletion completed for authenticated user:', result.deletedCount, 'records deleted');
+    } else {
+      // For anonymous users, delete all active CVs (since we can't distinguish between users)
+      // This is for development/testing mode only
+      console.log('⚠️ Anonymous deletion: Deleting all active CVs');
+      result = await CV.deleteMany({ isActive: true });
+      console.log('✅ CV deletion completed for anonymous mode:', result.deletedCount, 'records deleted');
+    }
+    
+    res.json({
+      success: true,
+      message: `CV data cleared successfully${result.deletedCount > 0 ? ` (${result.deletedCount} records deleted)` : ''}`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('❌ CV deletion error:', error);
+    next(new APIError('Failed to delete CV', 500, error.message));
+  }
+};
+
+/**
  * @desc    Generate PDF from CV data without saving
  * @route   POST /api/cvs/generate-pdf
  * @access  Public
@@ -952,8 +987,7 @@ const generatePDFFromData = async (req, res, next) => {
   }
 };
 
-module.exports = {
-  getAllCVs,
+module.exports = {  getAllCVs,
   createCV,
   getCVById,
   updateCV,
@@ -969,5 +1003,6 @@ module.exports = {
   generatePDFEmbed,
   getUserFullCV,
   saveUserFullCV,
+  deleteUserFullCV,
   generatePDFFromData
 };

@@ -40,6 +40,13 @@ router.get('/full', cvController.getUserFullCV);
 router.post('/full', cvController.saveUserFullCV);
 
 /**
+ * @route   DELETE /api/cvs/full
+ * @desc    Delete user's full CV
+ * @access  Public (temporarily for testing)
+ */
+router.delete('/full', cvController.deleteUserFullCV);
+
+/**
  * @route   POST /api/cvs/generate-pdf
  * @desc    Generate PDF from CV data (without saving)
  * @access  Public

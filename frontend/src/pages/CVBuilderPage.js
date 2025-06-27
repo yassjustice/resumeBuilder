@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useCV } from '../contexts/CVContext';
@@ -9,10 +9,20 @@ import Textarea from '../components/UI/Textarea';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import { api } from '../services/api';
 import { categorizeSkillsArray, normalizeSkillsForUI } from '../utils/skillsCategorization';
+// Add imports for new components and hooks
+import ErrorBoundary from '../components/UI/ErrorBoundary';
+import { useToast } from '../components/UI/ToastProvider';
+import { useFormValidation, cvValidationSchema } from '../hooks/useFormValidation';
+import { usePerformanceMonitor, useComponentPerformance } from '../hooks/usePerformance';
 
 export const CVBuilderPage = () => {
-  const { cvData, updateCV, saveCV, extractCVFromFile, extractCVFromText, downloadCV, isLoading, error, clearError } = useCV();
+  const { cvData, updateCV, saveCV, extractCVFromFile, extractCVFromText, downloadCV, isLoading, error, clearError, clearAllCVData } = useCV();
   const navigate = useNavigate();
+
+  // Enhanced hooks for better UX
+  const toast = useToast();
+  const { trackComponentError } = useComponentPerformance('CVBuilderPage');
+  const { trackApiCall } = usePerformanceMonitor();
 
   const [activeStep, setActiveStep] = useState(0);
   const [uploadMethod, setUploadMethod] = useState('upload'); // 'upload' or 'paste'
@@ -20,8 +30,14 @@ export const CVBuilderPage = () => {
   const [isDownloading, setIsDownloading] = useState(false); // Separate download state
   const [lastDownloadTime, setLastDownloadTime] = useState(0); // Prevent rapid clicks
   const [uploadError, setUploadError] = useState('');
-  const [pastedText, setPastedText] = useState('');
-  const [showSuccess, setShowSuccess] = useState(false);  const [formData, setFormData] = useState({
+  const [pastedText, setPastedText] = useState('');  const [showSuccess, setShowSuccess] = useState(false);
+  const [manualSaveCompleted, setManualSaveCompleted] = useState(false);
+  
+  // Auto-save related state
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
+  const autoSaveTimeoutRef = useRef(null);
+  const lastAutoSaveDataRef = useRef(null);const [formData, setFormData] = useState({
     personalInfo: {
       firstName: '',
       lastName: '',
@@ -39,28 +55,106 @@ export const CVBuilderPage = () => {
     languages: [],
     certifications: []
   });
-
   const steps = [
     { id: 0, title: 'Import CV', icon: '📁' },
     { id: 1, title: 'Personal Info', icon: '👤' },
     { id: 2, title: 'Experience', icon: '💼' },
-    { id: 3, title: 'Education', icon: '🎓' },
-    { id: 4, title: 'Skills', icon: '⚡' },
-    { id: 5, title: 'Review', icon: '✅' }
-  ];  useEffect(() => {
+    { id: 3, title: 'Education', icon: '🎓' },    { id: 4, title: 'Skills', icon: '⚡' },
+    { id: 5, title: 'Review & Save', icon: '✅' }
+  ];  // Debounced auto-save function
+  const debouncedAutoSave = useCallback((data) => {
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    // Set new timeout for auto-save
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      try {
+        // Check if data has actually changed
+        const dataString = JSON.stringify(data);
+        if (dataString === lastAutoSaveDataRef.current) {
+          return; // No changes, skip save
+        }
+
+        setIsAutoSaving(true);
+        console.log('💾 Auto-saving CV changes...');
+        
+        // First update the context with the current data
+        updateCV(data);
+        
+        // Then save to backend
+        const result = await saveCV(data);
+        if (result.success) {
+          setLastSaved(new Date());
+          lastAutoSaveDataRef.current = dataString;
+          console.log('✅ Auto-save successful');
+        } else {
+          console.error('❌ Auto-save failed:', result.error);
+        }
+      } catch (error) {
+        console.error('❌ Auto-save error:', error);
+      } finally {
+        setIsAutoSaving(false);
+      }
+    }, 2000); // 2 second delay
+  }, [saveCV, updateCV]);
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Save changes before user leaves the page
+  useEffect(() => {
+    const handleBeforeUnload = async (e) => {
+      // If there are pending changes, try to save them
+      if (autoSaveTimeoutRef.current) {
+        e.preventDefault();
+        e.returnValue = '';
+        
+        // Force immediate save
+        clearTimeout(autoSaveTimeoutRef.current);
+        try {
+          const dataToSave = {
+            ...formData,
+            skills: categorizeSkillsArray(formData.skills)
+          };
+          await saveCV(dataToSave);
+        } catch (error) {
+          console.error('Failed to save changes before leaving:', error);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [formData, saveCV]);useEffect(() => {
     if (cvData) {
+      // Debug: Log the original cvData
+      console.log('🔍 CVBuilder: Original cvData received:', cvData);
+      console.log('🔍 CVBuilder: Original skills format:', cvData.skills);
+      console.log('🔍 CVBuilder: Skills type:', typeof cvData.skills);
+      
       // Ensure no null values in the form data
       const sanitizedData = sanitizeFormData(cvData);
-        // Normalize skills from object format to array format for UI
+      console.log('🔍 CVBuilder: After sanitization:', sanitizedData.skills);
+      
+      // Normalize skills from object format to array format for UI
       if (sanitizedData.skills) {
         sanitizedData.skills = normalizeSkillsForUI(sanitizedData.skills);
+        console.log('🔍 CVBuilder: After normalization:', sanitizedData.skills);
+        console.log('🔍 CVBuilder: Skills count after normalization:', sanitizedData.skills?.length || 0);
       }
       
       setFormData(sanitizedData);
       // If CV exists, skip to personal info step
       setActiveStep(1);
     }
-  }, [cvData]);// Helper function to ensure no null values
+  }, [cvData]);// Helper function to ensure no null/undefined values
   const sanitizeFormData = (data) => {
     const sanitize = (obj) => {
       if (Array.isArray(obj)) {
@@ -142,9 +236,7 @@ export const CVBuilderPage = () => {
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const handleInputChange = (section, field, value, index = null) => {
+  };  const handleInputChange = (section, field, value, index = null) => {
     setFormData(prev => {
       const updated = { ...prev };
       
@@ -159,22 +251,57 @@ export const CVBuilderPage = () => {
         updated[field] = value;
       }
       
+      // Prepare data for saving (convert skills to categorized format)
+      const dataToSave = {
+        ...updated,
+        skills: categorizeSkillsArray(updated.skills)
+      };
+      
+      // Update CV context immediately for UI consistency
+      updateCV(dataToSave);
+      
+      // Trigger debounced auto-save
+      debouncedAutoSave(dataToSave);
+      
+      return updated;
+    });
+  };
+  const addArrayItem = (section) => {
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [section]: [...(prev[section] || []), getEmptyItem(section)]
+      };
+      
+      // Prepare data for saving and trigger auto-save
+      const dataToSave = {
+        ...updated,
+        skills: categorizeSkillsArray(updated.skills)
+      };
+      updateCV(dataToSave);
+      debouncedAutoSave(dataToSave);
+      
       return updated;
     });
   };
 
-  const addArrayItem = (section) => {
-    setFormData(prev => ({
-      ...prev,
-      [section]: [...(prev[section] || []), getEmptyItem(section)]
-    }));
-  };
-
   const removeArrayItem = (section, index) => {
-    setFormData(prev => ({
-      ...prev,
-      [section]: prev[section].filter((_, i) => i !== index)
-    }));
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [section]: prev[section].filter((_, i) => i !== index)
+      };
+      
+      // Prepare data for saving and trigger auto-save
+      const dataToSave = {
+        ...updated,
+        skills: categorizeSkillsArray(updated.skills)
+      };
+      updateCV(dataToSave);
+      debouncedAutoSave(dataToSave);
+      
+      return updated;
+    });
   };
 
   const getEmptyItem = (section) => {
@@ -213,34 +340,62 @@ export const CVBuilderPage = () => {
   };  const handleSave = async () => {
     setIsProcessing(true);
     setUploadError('');
-    try {      // Prepare data for backend - convert skills array back to categorized format
+    
+    // Cancel any pending auto-save since we're doing manual save
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    try {
+      // Prepare data for backend - convert skills array back to categorized format
       const dataToSave = {
         ...formData,
         skills: categorizeSkillsArray(formData.skills)
       };
       
-      const result = await saveCV(dataToSave);
-      if (result.success) {
-        // Show success and move to final step
-        console.log('✅ CV saved successfully');
+      console.log('🔄 Manual save: Saving CV with data:', {
+        personalInfo: dataToSave.personalInfo,
+        skillsType: typeof dataToSave.skills,
+        skillsKeys: Object.keys(dataToSave.skills || {}),
+        experienceCount: dataToSave.experience?.length || 0
+      });
+      
+      // First update the context with current data
+      updateCV(dataToSave);
+      
+      // Use toast promise for better UX
+      const result = await toast.toast.promise(
+        saveCV(dataToSave),
+        {
+          loading: 'Saving your CV...',
+          success: 'CV saved successfully! 🎉',
+          error: 'Failed to save CV. Please try again.'
+        }
+      );
+
+      if (result.success) {        
+        console.log('✅ Manual save: CV saved successfully');
+        setLastSaved(new Date()); // Update last saved time
+        setManualSaveCompleted(true); // Mark manual save as completed
         setShowSuccess(true);
-        setActiveStep(5); // Move to review/success step
+        setTimeout(() => setShowSuccess(false), 3000);
         
-        // Update the CV data in context - make sure it's the latest
-        updateCV(dataToSave);
+        // If we're on the review step (step 5), force a re-render to show success state
+        if (activeStep === 5) {
+          setActiveStep(5);
+        }
         
-        // Optional: Auto-redirect after a delay
-        setTimeout(() => {
-          // You can uncomment this to auto-redirect to dashboard
-          // navigate('/dashboard');
-        }, 3000);
+        console.log('✅ Manual save: CV saved and context updated');
       } else {
-        console.error('❌ Failed to save CV:', result.error);
+        console.error('❌ Manual save: Failed to save CV:', result.error);
         setUploadError(result.error || 'Failed to save CV');
+        toast.toast.error('Failed to save CV: ' + (result.error || 'Unknown error'));
       }
     } catch (error) {
-      console.error('Failed to save CV:', error);
+      console.error('Manual save: Failed to save CV:', error);
+      trackComponentError(error);
       setUploadError(error.message || 'Failed to save CV');
+      toast.toast.error('Save failed: ' + error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -652,22 +807,40 @@ export const CVBuilderPage = () => {
         );      case 5:
         return (
           <div className="space-y-6">
-            {/* Always show success message in step 5 */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5 }}
-              className="bg-green-50 border border-green-200 rounded-lg p-8 text-center"
-            >
-              <div className="text-green-500 text-6xl mb-4">✅</div>
-              <h2 className="text-3xl font-bold text-green-900 mb-4">Congratulations!</h2>
-              <p className="text-xl text-green-700 mb-2">
-                Your CV has been saved successfully!
-              </p>
-              <p className="text-green-600">
-                Your professional CV is now ready to help you land your dream job.
-              </p>
-            </motion.div>
+            {/* Show success message only if manual save was completed */}
+            {manualSaveCompleted ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5 }}
+                className="bg-green-50 border border-green-200 rounded-lg p-8 text-center"
+              >
+                <div className="text-green-500 text-6xl mb-4">✅</div>
+                <h2 className="text-3xl font-bold text-green-900 mb-4">Congratulations!</h2>
+                <p className="text-xl text-green-700 mb-2">
+                  Your CV has been saved successfully!
+                </p>
+                <p className="text-green-600">
+                  Your professional CV is now ready to help you land your dream job.
+                </p>
+              </motion.div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5 }}
+                className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center"
+              >
+                <div className="text-blue-500 text-6xl mb-4">👀</div>
+                <h2 className="text-3xl font-bold text-blue-900 mb-4">Review Your CV</h2>
+                <p className="text-xl text-blue-700 mb-2">
+                  Your CV is ready for review and download
+                </p>
+                <p className="text-blue-600">
+                  Use the "Save CV" button below to save to your account, or download directly.
+                </p>
+              </motion.div>
+            )}
 
             {/* Error Message */}
             {uploadError && (
@@ -675,32 +848,53 @@ export const CVBuilderPage = () => {
                 <p className="text-red-600 text-center">{uploadError}</p>
               </div>
             )}
-            
-            {/* What's Next Section */}
+              {/* What's Next Section */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.3 }}
               className="bg-blue-50 border border-blue-200 rounded-lg p-6"
             >
-              <h3 className="text-lg font-semibold text-blue-900 mb-4">🚀 What's Next?</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl mb-2">📥</div>
-                  <h4 className="font-medium text-blue-900 mb-1">Download Your CV</h4>
-                  <p className="text-sm text-blue-700">Get a PDF copy of your CV</p>
+              <h3 className="text-lg font-semibold text-blue-900 mb-4">
+                {manualSaveCompleted ? '🚀 What\'s Next?' : '💾 Ready to Save & Use Your CV?'}
+              </h3>
+              {manualSaveCompleted ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">📥</div>
+                    <h4 className="font-medium text-blue-900 mb-1">Download Your CV</h4>
+                    <p className="text-sm text-blue-700">Get a PDF copy of your CV</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">🎯</div>
+                    <h4 className="font-medium text-blue-900 mb-1">Apply for Jobs</h4>
+                    <p className="text-sm text-blue-700">Tailor your CV for specific positions</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">📊</div>
+                    <h4 className="font-medium text-blue-900 mb-1">View Dashboard</h4>
+                    <p className="text-sm text-blue-700">Manage your CV and applications</p>
+                  </div>
                 </div>
+              ) : (
                 <div className="text-center">
-                  <div className="text-2xl mb-2">🎯</div>
-                  <h4 className="font-medium text-blue-900 mb-1">Apply for Jobs</h4>
-                  <p className="text-sm text-blue-700">Tailor your CV for specific positions</p>
+                  <p className="text-blue-700 mb-4">
+                    Your CV is complete and ready! Save it to your account to access it later, or download it directly.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl mb-2">💾</div>
+                      <h4 className="font-medium text-blue-900 mb-1">Save to Account</h4>
+                      <p className="text-sm text-blue-700">Save for future access and editing</p>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl mb-2">📥</div>
+                      <h4 className="font-medium text-blue-900 mb-1">Download PDF</h4>
+                      <p className="text-sm text-blue-700">Get a PDF copy immediately</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl mb-2">📊</div>
-                  <h4 className="font-medium text-blue-900 mb-1">View Dashboard</h4>
-                  <p className="text-sm text-blue-700">Manage your CV and applications</p>
-                </div>
-              </div>
+              )}
             </motion.div>
             
             <div className="bg-gray-50 rounded-lg p-6">
@@ -736,38 +930,74 @@ export const CVBuilderPage = () => {
                   </div>
                 </div>
               </div>              {/* Action buttons */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Button
-                  onClick={handleDownloadCV}
-                  variant="primary"
-                  disabled={isDownloading}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                >
-                  {isDownloading ? (
-                    <div className="flex items-center justify-center">
-                      <LoadingSpinner size="sm" />
-                      <span className="ml-2">Downloading PDF...</span>
-                    </div>
-                  ) : (
-                    <>📄 Download CV</>
-                  )}
-                </Button>
-                
-                <Button
-                  onClick={() => navigate('/job-application')}
-                  variant="primary"
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                >
-                  🎯 Apply for Jobs
-                </Button>
+              {manualSaveCompleted ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Button
-                  onClick={() => navigate('/dashboard', { state: { refreshCV: true } })}
-                  variant="outline"
-                  className="w-full"
-                >
-                  📊 Go to Dashboard
-                </Button>
-              </div>
+                    onClick={handleDownloadCV}
+                    variant="primary"
+                    disabled={isDownloading}
+                    className="w-full bg-green-600 hover:bg-green-700"
+                  >
+                    {isDownloading ? (
+                      <div className="flex items-center justify-center">
+                        <LoadingSpinner size="sm" />
+                        <span className="ml-2">Downloading PDF...</span>
+                      </div>
+                    ) : (
+                      <>📄 Download CV</>
+                    )}
+                  </Button>
+                  
+                  <Button
+                    onClick={() => navigate('/job-application')}
+                    variant="primary"
+                    className="w-full bg-blue-600 hover:bg-blue-700"
+                  >
+                    🎯 Apply for Jobs
+                  </Button>
+                    <Button
+                    onClick={() => navigate('/dashboard', { state: { refreshCV: true } })}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    📊 Go to Dashboard
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Button
+                    onClick={handleSave}
+                    variant="primary"
+                    disabled={isProcessing || isAutoSaving}
+                    className="w-full bg-blue-600 hover:bg-blue-700"
+                  >
+                    {isProcessing ? (
+                      <div className="flex items-center justify-center">
+                        <LoadingSpinner size="sm" />
+                        <span className="ml-2">Saving...</span>
+                      </div>
+                    ) : (
+                      '💾 Save CV to Account'
+                    )}
+                  </Button>
+                  
+                  <Button
+                    onClick={handleDownloadCV}
+                    variant="outline"
+                    disabled={isDownloading}
+                    className="w-full"
+                  >
+                    {isDownloading ? (
+                      <div className="flex items-center justify-center">
+                        <LoadingSpinner size="sm" />
+                        <span className="ml-2">Downloading PDF...</span>
+                      </div>
+                    ) : (
+                      <>📄 Download PDF</>
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -777,10 +1007,79 @@ export const CVBuilderPage = () => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 py-8">
+  return (    <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Progress Steps */}
+        
+        {/* Page Header with Actions */}
+        <div className="mb-6 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">CV Builder</h1>
+            <p className="text-gray-600">Create and customize your professional CV</p>
+          </div>
+          <div className="flex gap-3">            <Button
+              onClick={async () => {
+                console.log('🗑️ CV Builder: Starting fresh');
+                setIsProcessing(true);
+                
+                try {
+                  // Clear all CV data from context and backend
+                  const result = await clearAllCVData();
+                  
+                  if (result.success) {
+                    console.log('✅ CV Builder: Successfully cleared CV data');
+                    
+                    // Reset form to empty state
+                    setFormData({
+                      personalInfo: {
+                        firstName: '',
+                        lastName: '',
+                        title: '',
+                        email: '',
+                        phone: '',
+                        location: '',
+                        linkedin: '',
+                        website: ''
+                      },
+                      summary: '',
+                      experience: [],
+                      education: [],
+                      skills: [],
+                      languages: [],
+                      certifications: []
+                    });
+                    
+                    setActiveStep(0);
+                    setShowSuccess(false);
+                    setManualSaveCompleted(false);
+                    clearError();
+                    
+                    console.log('✅ CV Builder: Form reset completed');
+                  } else {
+                    console.error('❌ CV Builder: Failed to clear CV data:', result.error);
+                    setUploadError(result.error || 'Failed to clear CV data');
+                  }
+                } catch (error) {
+                  console.error('❌ CV Builder: Error during clear operation:', error);
+                  setUploadError('Failed to clear CV data');
+                } finally {
+                  setIsProcessing(false);
+                }
+              }}
+              variant="outline"
+              size="sm"
+              className="text-red-600 border-red-200 hover:bg-red-50"
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <div className="flex items-center">
+                  <LoadingSpinner size="sm" />
+                  <span className="ml-2">Clearing...</span>
+                </div>
+              ) : (
+                '🗑️ Start Fresh'              )}
+            </Button>
+          </div>
+        </div>{/* Progress Steps */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             {steps.map((step, index) => (
@@ -816,7 +1115,28 @@ export const CVBuilderPage = () => {
               </div>
             ))}
           </div>
-        </div>
+        </div>        {/* Auto-save Status */}
+        {activeStep > 0 && (
+          <div className="mb-4 flex items-center justify-center">
+            {isAutoSaving ? (
+              <div className="flex items-center text-sm text-blue-600">
+                <LoadingSpinner size="sm" />
+                <span className="ml-2">Auto-saving changes...</span>
+              </div>
+            ) : showSuccess ? (
+              <div className="flex items-center text-sm text-green-600 bg-green-50 px-4 py-2 rounded-lg">
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                CV saved successfully!
+              </div>
+            ) : lastSaved ? (
+              <div className="text-sm text-gray-500">
+                Last saved: {lastSaved.toLocaleTimeString()}
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {/* Step Content */}
         <motion.div
@@ -830,7 +1150,7 @@ export const CVBuilderPage = () => {
           {renderStepContent()}
         </motion.div>        {/* Navigation */}
         {activeStep < 5 && (
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <Button
               onClick={() => setActiveStep(Math.max(0, activeStep - 1))}
               variant="outline"
@@ -839,21 +1159,33 @@ export const CVBuilderPage = () => {
               Previous
             </Button>
             
-            <div className="flex space-x-4">
-              {activeStep === steps.length - 1 ? (
+            {/* Manual Save Button - Available on all steps after import */}
+            {activeStep > 0 && (
+              <Button
+                onClick={handleSave}
+                variant="outline"
+                disabled={isProcessing || isAutoSaving}
+                className="text-blue-600 border-blue-200 hover:bg-blue-50"
+              >
+                {isProcessing ? (
+                  <div className="flex items-center">
+                    <LoadingSpinner size="sm" />
+                    <span className="ml-2">Saving...</span>
+                  </div>
+                ) : (
+                  '💾 Save CV'
+                )}
+              </Button>
+            )}
+              <div className="flex space-x-4">              {activeStep === steps.length - 1 ? (
                 <Button
-                  onClick={handleSave}
+                  onClick={() => {
+                    // Move to review step without forcing save
+                    setActiveStep(5);
+                  }}
                   variant="primary"
-                  disabled={isProcessing}
                 >
-                  {isProcessing ? (
-                    <div className="flex items-center">
-                      <LoadingSpinner size="sm" />
-                      <span className="ml-2">Saving...</span>
-                    </div>
-                  ) : (
-                    'Save CV'
-                  )}
+                  Review & Finish →
                 </Button>
               ) : (
                 <Button

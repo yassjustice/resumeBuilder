@@ -82,10 +82,13 @@ export const cvApi = {
   // Get user's full CV
   getFullCV: () =>
     apiClient.get('/cvs/full'),
-  
-  // Save/update full CV
+    // Save/update full CV
   saveFullCV: (cvData) =>
     apiClient.post('/cvs/full', cvData),
+  
+  // Delete full CV
+  deleteFullCV: () =>
+    apiClient.delete('/cvs/full'),
   
   // Update specific CV section
   updateCVSection: (section, data) =>
@@ -282,10 +285,10 @@ export const api = {
   verifyToken: authApi.verifyToken,
   refreshToken: authApi.refreshToken,
   forgotPassword: authApi.forgotPassword,
-  resetPassword: authApi.resetPassword,
-  // CV methods
+  resetPassword: authApi.resetPassword,  // CV methods
   getCV: cvApi.getFullCV,
   saveCV: cvApi.saveFullCV,
+  deleteCV: cvApi.deleteFullCV,
   updateCVSection: cvApi.updateCVSection,
   generatePDF: cvApi.generatePDF,
   getThemes: cvApi.getThemes,  // File upload methods

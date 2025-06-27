@@ -11,6 +11,7 @@ import {
   CheckIcon,
 } from '@heroicons/react/24/outline';
 import Button from '../components/UI/Button';
+import APITestComponent from '../components/UI/APITestComponent';
 
 const HomePage = () => {
   const features = [
@@ -68,9 +69,12 @@ const HomePage = () => {
       description: 'Download your optimized CV and cover letter, then submit your application.',
     },
   ];
-
   return (
-    <div className="min-h-screen">      {/* Hero Section */}
+    <div className="min-h-screen">
+      {/* API Test Component - Temporary for debugging */}
+      <APITestComponent />
+      
+      {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-blue-50 via-white to-blue-50 overflow-hidden">
         <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
