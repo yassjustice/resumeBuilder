@@ -191,7 +191,8 @@ export const AdvancedJobApplicationPage = () => {
         
         try {
           const fileName = `cover-letter-${jobOffer?.title?.replace(/[^a-zA-Z0-9]/g, '-') || 'application'}`;
-          const result = await api.downloadCoverLetter(coverLetter, fileName);
+          console.log('📄 Downloading cover letter with content:', coverLetter?.content?.substring(0, 100) + '...');
+          const result = await api.downloadCoverLetter(coverLetter.content || coverLetter, fileName);
           if (result.success) {
             console.log('✅ Cover letter downloaded successfully');
           } else {

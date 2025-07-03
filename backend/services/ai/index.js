@@ -7,10 +7,12 @@ const AIService = require('./aiService');
 const FileProcessingService = require('./fileProcessingService');
 const CVProcessingService = require('./cvProcessingService');
 const CoverLetterService = require('./coverLetterService');
+const CVValidationService = require('./cvValidationService');
 
 module.exports = {
   AIService,
   FileProcessingService,
   CVProcessingService,
-  CoverLetterService
+  CoverLetterService,
+  CVValidationService
 };

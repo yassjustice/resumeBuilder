@@ -3,7 +3,7 @@ import axios from 'axios';
 // Create axios instance with base configuration
 const apiClient = axios.create({
   baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
-  timeout: 30000,
+  timeout: 120000, // 2 minutes for AI requests that might need rate limiting
   headers: {
     'Content-Type': 'application/json',
   },
@@ -206,30 +206,35 @@ export const aiApi = {
     const response = await apiClient.post('/ai/extract-cv', { text });
     return response.data || response;
   },
-    // Extract job offer data from text
+  // Extract job offer data from text
   extractJobOfferFromText: async (text) => {
+    console.log('🔍 API: Sending job offer extraction request for text:', text);
     const response = await apiClient.post('/ai/extract-job-offer', { text });
-    return response.data || response;
+    console.log('📦 API: Job offer extraction response:', response);
+    return response; // Return the full response from interceptor
   },
   
   // Generate tailored CV
   generateTailoredCV: async ({ cv, jobOffer, additionalRequirements }) => {
+    console.log('🎯 API: Sending tailored CV generation request');
     const response = await apiClient.post('/ai/tailor-cv', {
       cv,
       jobOffer,
       additionalRequirements
     });
-    return response.data || response;
+    console.log('📦 API: Tailored CV response:', response);
+    return response; // Return the full response from interceptor
   },
-  
-  // Generate cover letter
+    // Generate cover letter
   generateCoverLetter: async ({ cv, jobOffer, additionalRequirements }) => {
+    console.log('📝 API: Sending cover letter generation request');
     const response = await apiClient.post('/ai/generate-cover-letter', {
       cv,
       jobOffer,
       additionalRequirements
     });
-    return response.data || response;
+    console.log('📦 API: Cover letter response:', response);
+    return response; // Return the full response from interceptor
   }
 };
 
@@ -247,7 +252,7 @@ export const fileApi = {
       formData.append('file', formDataOrFile);
     }
     
-    const response = await apiClient.post('/files/upload', formData, {
+    const response = await apiClient.post('/ai/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -312,12 +317,60 @@ export const api = {
     return response;
   },
   downloadCoverLetter: async (letterContent, fileName) => {
-    const response = await apiClient.post('/download/cover-letter', { 
-      content: letterContent, 
-      fileName 
-    }, {
-      responseType: 'blob',
-    });
-    return response.data; // Return the blob data directly
+    // Follow the exact same pattern as successful CV download
+    console.log('📤 API: Starting cover letter PDF download...');
+    console.log('📄 Content length:', letterContent?.length || 0);
+    
+    try {
+      const response = await apiClient.post('/ai/download/cover-letter', { 
+        content: letterContent, 
+        fileName 
+      }, {
+        responseType: 'blob',
+        timeout: 120000, // 2 minute timeout like CV generation
+        headers: {
+          'Accept': 'application/pdf',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('✅ API: Cover letter PDF request successful');
+      
+      // The axios interceptor returns blob data directly for blob responses
+      const blob = response;
+      
+      // Validate the response is a proper blob (same as CV download)
+      if (!(blob instanceof Blob)) {
+        console.error('❌ API: Response is not a blob:', blob);
+        throw new Error('Invalid PDF response - not a blob');
+      }
+      
+      if (blob.size === 0) {
+        console.error('❌ API: Blob is empty');
+        throw new Error('Invalid PDF response - empty blob');
+      }
+      
+      console.log('✅ API: Valid cover letter PDF blob received, size:', blob.size);
+      
+      // Create download using the same method as CV download
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${fileName || 'cover-letter'}.pdf`;
+      link.style.display = 'none';
+      
+      // Add to DOM, click, and clean up (same as CV download)
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      console.log('✅ API: Cover letter download completed');
+      return { success: true };
+      
+    } catch (error) {
+      console.error('❌ API: Cover letter download failed:', error);
+      throw error;
+    }
   },
 };

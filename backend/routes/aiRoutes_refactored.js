@@ -138,20 +138,16 @@ router.post('/tailor-cv', async (req, res) => {
   try {
     const { cv, jobOffer, additionalRequirements } = req.body;
     
-    // Use the new advanced tailoring service
-    const CVTailoringService = require('../services/ai/cvTailoringService');
-    const tailoringService = new CVTailoringService();
-    
-    const tailoredCV = await tailoringService.tailorCV(cv, jobOffer, additionalRequirements);
+    const tailoredCV = await cvProcessingService.tailorCV(cv, jobOffer, additionalRequirements);
     
     res.json({
       success: true,
       data: tailoredCV,
-      message: 'CV tailored successfully using advanced AI processing'
+      message: 'CV tailored successfully'
     });
 
   } catch (error) {
-    console.error('Advanced CV tailoring error:', error);
+    console.error('CV tailoring error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to tailor CV',
@@ -187,48 +183,22 @@ router.post('/generate-cover-letter', async (req, res) => {
 });
 
 /**
- * @route   POST /api/ai/download/cover-letter
- * @desc    Generate PDF for cover letter content (following CV PDF pattern)
+ * @route   POST /api/download/cover-letter
+ * @desc    Generate PDF for cover letter content
  * @access  Public
  */
 router.post('/download/cover-letter', async (req, res) => {
   try {
-    console.log('🔄 Cover letter PDF generation request received');
     const { content, fileName } = req.body;
-    
-    if (!content) {
-      console.log('❌ No cover letter content provided');
-      return res.status(400).json({ error: 'Cover letter content is required' });
-    }
-    
-    console.log('🔄 Generating cover letter PDF...');
-    console.log('📄 Content length:', content?.length || 0);
     
     const pdfBuffer = await coverLetterService.generateCoverLetterPDF(content, fileName);
     
-    if (!pdfBuffer || pdfBuffer.length === 0) {
-      console.log('❌ Cover letter PDF generation returned empty buffer');
-      return res.status(500).json({ error: 'Cover letter PDF generation failed - empty buffer' });
-    }
-    
-    console.log('✅ Cover letter PDF generated successfully, size:', pdfBuffer.length);
-    
-    // Set headers exactly like CV PDF generation
-    const actualFileName = `${fileName || 'cover-letter'}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${actualFileName}"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
-    res.setHeader('Accept-Ranges', 'none'); // Disable range requests
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    
-    console.log('📤 Sending cover letter PDF response...');
-    res.end(pdfBuffer); // Use res.end() like CV PDF generation
-    console.log('✅ Cover letter PDF response sent successfully');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName || 'cover-letter'}.pdf"`);
+    res.send(pdfBuffer);
 
   } catch (error) {
-    console.error('❌ Cover letter PDF generation error:', error);
+    console.error('Cover letter PDF generation error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to generate cover letter PDF',

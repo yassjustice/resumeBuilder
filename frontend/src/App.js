@@ -16,7 +16,6 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import CVBuilderPage from './pages/CVBuilderPage';
-import JobApplicationPage from './pages/JobApplicationPage';
 import AdvancedJobApplicationPage from './pages/AdvancedJobApplicationPage';
 import ProfilePage from './pages/ProfilePage';
 
@@ -46,18 +45,9 @@ function App() {
                         <ProtectedRoute>
                           <CVBuilderPage />
                         </ProtectedRoute>
-                      } 
-                    />
+                      }                    />
                     <Route 
-                      path="job-application" 
-                      element={
-                        <ProtectedRoute>
-                          <JobApplicationPage />
-                        </ProtectedRoute>
-                      } 
-                    />
-                    <Route 
-                      path="advanced-job-application" 
+                      path="advanced-job-application"
                       element={
                         <ProtectedRoute>
                           <AdvancedJobApplicationPage />

@@ -1,24 +1,14 @@
 /**
  * AI Service - Core Gemini AI functionality
- * Handles all AI model interactions and prompts
+ * Now uses AIServiceManager for multi-tier fallback
  */
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const AIServiceManager = require('./aiServiceManager');
+const EnhancedFallbackParser = require('./enhancedFallbackParser');
 
 class AIService {
   constructor() {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY not configured');
-    }
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    // this.model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-    this.model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-    
-    // Rate limiting variables
-    this.requestCount = 0;
-    this.lastResetTime = Date.now();
-    this.maxRequestsPerMinute = 12; // Conservative limit to avoid 429 errors
-    this.requestQueue = [];
-    this.isProcessingQueue = false;
+    this.serviceManager = new AIServiceManager();
+    this.fallbackParser = new EnhancedFallbackParser();
   }
 
   /**
@@ -26,9 +16,8 @@ class AIService {
    */
   async testConnection() {
     try {
-      const result = await this.model.generateContent("Hello, are you working?");
-      const response = await result.response;
-      return response.text();
+      const result = await this.serviceManager.generateContent("Hello, are you working?", true);
+      return `${result.content} (via ${result.serviceUsed})`;
     } catch (error) {
       throw new Error(`AI service test failed: ${error.message}`);
     }
@@ -125,72 +114,79 @@ Return the extracted text in a clean, readable format while preserving the struc
       console.error('❌ Gemini Vision image OCR failed:', error);
       throw new Error(`Image OCR extraction failed: ${error.message}`);
     }
-  }  /**
-   * Rate limiting helper
-   */
-  async checkRateLimit() {
-    const now = Date.now();
-    const timeSinceReset = now - this.lastResetTime;
-    
-    // Reset counter every minute OR if this is the first request
-    if (timeSinceReset >= 60000 || this.lastResetTime === 0) {
-      this.requestCount = 0;
-      this.lastResetTime = now;
-      console.log(`🔄 Rate limit reset. Time since last reset: ${Math.ceil(timeSinceReset/1000)}s`);
-    }
-    
-    // Increment first, then check
-    this.requestCount++;
-    
-    // Check if we're over the limit AFTER incrementing
-    if (this.requestCount > this.maxRequestsPerMinute) {
-      const waitTime = 60000 - timeSinceReset + 1000; // Wait until next minute + buffer
-      console.log(`⏳ Rate limit reached (${this.requestCount}/${this.maxRequestsPerMinute}), waiting ${Math.ceil(waitTime/1000)}s...`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-      this.requestCount = 1; // Reset to 1 since this request will be the first of the new window
-      this.lastResetTime = Date.now();
-    }
-    
-    console.log(`📊 Rate limit status: ${this.requestCount}/${this.maxRequestsPerMinute} requests used`);
   }
 
   /**
-   * Generate content with AI model with rate limiting and retry
+   * Generate content with multi-tier fallback
    * @param {string} prompt - The prompt to send to AI
-   * @returns {Promise<string>} - AI response text
+   * @param {boolean} isGeneration - Whether this is generation (true) or extraction (false)
+   * @returns {Promise<string|Object>} - AI response text or structured data
    */
-  async generateContent(prompt) {
-    const maxRetries = 3;
-    let lastError;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        await this.checkRateLimit();
-        
-        console.log(`🤖 AI Request ${attempt}/${maxRetries} (${this.requestCount}/${this.maxRequestsPerMinute})`);
-        
-        const result = await this.model.generateContent(prompt);
-        const response = await result.response;
-        return response.text();
-        
-      } catch (error) {
-        lastError = error;
-        
-        // Check if it's a rate limit error
-        if (error.message.includes('429') || error.message.includes('quota')) {
-          console.log(`⚠️ Rate limit hit on attempt ${attempt}, waiting 40s...`);
-          await new Promise(resolve => setTimeout(resolve, 40000));
-          // Reset our internal counter
-          this.requestCount = 0;
-          this.lastResetTime = Date.now();
-        } else if (attempt < maxRetries) {
-          console.log(`⚠️ AI request failed (attempt ${attempt}), retrying in 2s...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+  async generateContent(prompt, isGeneration = false) {
+    try {
+      const result = await this.serviceManager.generateContent(prompt, isGeneration);
+      
+      if (result.content === null) {
+        // This means we need to use fallback parser (only for extractions)
+        if (isGeneration) {
+          throw new Error('All AI services failed and fallback is not available for generation tasks');
         }
+        
+        console.log(`📊 Using ${result.serviceUsed} for content extraction`);
+        return result; // Return the result object with serviceUsed info
+      }
+      
+      console.log(`📊 Content generated using ${result.serviceUsed}`);
+      return result.content;
+      
+    } catch (error) {
+      if (isGeneration) {
+        throw error; // Re-throw for generation tasks
+      }
+      
+      // For extraction tasks, return fallback indicator
+      console.log('🔄 All AI services failed, returning fallback indicator');
+      return { content: null, serviceUsed: 'Systematic Fallback Parser' };
+    }
+  }
+
+  /**
+   * Generate content specifically for extraction tasks with fallback
+   * @param {string} prompt - The prompt to send to AI
+   * @param {string} text - Original text for fallback parsing
+   * @param {string} extractionType - Type of extraction ('cv' or 'jobOffer')
+   * @returns {Promise<Object>} - Structured extraction result
+   */
+  async generateContentWithFallback(prompt, text, extractionType) {
+    const result = await this.generateContent(prompt, false);
+    
+    if (typeof result === 'object' && result.content === null) {
+      // Use fallback parser
+      if (extractionType === 'jobOffer') {
+        const data = this.fallbackParser.extractJobOffer(text);
+        return { data, serviceUsed: result.serviceUsed };
+      } else if (extractionType === 'cv') {
+        const data = this.fallbackParser.extractCVData(text);
+        return { data, serviceUsed: result.serviceUsed };
+      } else {
+        throw new Error(`Unknown extraction type: ${extractionType}`);
       }
     }
     
-    throw new Error(`AI content generation failed after ${maxRetries} attempts: ${lastError.message}`);
+    // AI succeeded, parse the response
+    try {
+      const data = this.parseAIResponse(result);
+      return { data, serviceUsed: 'AI Service' };
+    } catch (parseError) {
+      console.log('⚠️ AI response parsing failed, using fallback parser');
+      if (extractionType === 'jobOffer') {
+        const data = this.fallbackParser.extractJobOffer(text);
+        return { data, serviceUsed: 'Systematic Fallback Parser (Parse Error)' };
+      } else if (extractionType === 'cv') {
+        const data = this.fallbackParser.extractCVData(text);
+        return { data, serviceUsed: 'Systematic Fallback Parser (Parse Error)' };
+      }
+    }
   }
   /**
    * Parse JSON response from AI with robust fallback handling

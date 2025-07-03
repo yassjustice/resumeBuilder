@@ -1,8 +1,10 @@
 /**
  * Advanced CV Tailoring Service
  * Provides sophisticated, modular CV tailoring with deep analysis and optimization
+ * Now includes authenticity validation to prevent over-quantification and skill fabrication
  */
 const AIService = require('./aiService');
+const CVAuthenticityValidator = require('./cvAuthenticityValidator');
 
 class CVTailoringService {
   constructor() {
@@ -59,7 +61,7 @@ class CVTailoringService {
         education: sectionOptimizations.education || normalizedCV.education,
         skills: sectionOptimizations.skills || normalizedCV.skills,
         certifications: sectionOptimizations.certifications || normalizedCV.certifications,
-        languages: normalizedCV.languages || [],
+        languages: sectionOptimizations.languages || normalizedCV.languages || [],
         additionalExperience: normalizedCV.additionalExperience || [],
         interests: normalizedCV.interests || [],
         // Add metadata for tracking
@@ -79,20 +81,36 @@ class CVTailoringService {
             certificationsOptimized: !!sectionOptimizations.certifications
           }
         }
-      };
-
-      console.log('🎉 CV tailoring completed successfully');
+      };      console.log('🎉 CV tailoring completed successfully');
       console.log('📋 Final tailored CV structure:', {
         hasPersonalInfo: !!tailoredCV.personalInfo,
         hasSummary: !!tailoredCV.summary,
         experienceCount: tailoredCV.experience?.length || 0,
         projectsCount: tailoredCV.projects?.length || 0,
         educationCount: tailoredCV.education?.length || 0,
-        skillsCategories: Object.keys(tailoredCV.skills || {}).length,
-        certificationsCount: tailoredCV.certifications?.length || 0,
+        skillsCategories: Object.keys(tailoredCV.skills || {}).length,        certificationsCount: tailoredCV.certifications?.length || 0,
         hasMetadata: !!tailoredCV.metadata
       });
       
+      // 🛡️ CRITICAL: Apply comprehensive authenticity validation
+      console.log('🛡️ Starting authenticity validation...');
+      const authenticationReport = CVAuthenticityValidator.generateReport(normalizedCV, tailoredCV);
+      
+      if (authenticationReport.status === 'FAILED') {
+        console.warn('⚠️ Authenticity validation found critical issues:', authenticationReport.details.issues);
+        // Add validation warnings to metadata
+        tailoredCV.metadata.authenticityWarnings = authenticationReport.details.issues;
+      }
+      
+      if (authenticationReport.details.warnings.length > 0) {
+        console.warn('⚠️ Authenticity validation warnings:', authenticationReport.details.warnings);
+        tailoredCV.metadata.authenticityNotes = authenticationReport.details.warnings;
+      }
+      
+      tailoredCV.metadata.authenticityScore = authenticationReport.authenticityScore;
+      
+      console.log(`✅ Authenticity validation completed - Score: ${authenticationReport.authenticityScore}/100`);
+      console.log('✅ CV tailoring completed successfully');
       return tailoredCV;
 
     } catch (error) {
@@ -212,8 +230,7 @@ Examples of good titles:
 
   /**
    * Tailor professional summary for maximum impact
-   */
-  async tailorProfessionalSummary(cv, jobAnalysis, cvAnalysis) {
+   */  async tailorProfessionalSummary(cv, jobAnalysis, cvAnalysis) {
     const prompt = `
 Create a compelling professional summary that perfectly aligns with the target role:
 
@@ -230,6 +247,13 @@ Requirements:
 6. Use confident, human language
 7. Avoid clichés like "results-driven", "team player", "detail-oriented"
 8. End with future value statement
+
+CRITICAL RESTRICTIONS:
+- NO bracketed suggestions like [Add details...] or [project name]
+- NO placeholder text or suggestions for improvement
+- NO incomplete sentences or optional additions
+- Return ONLY the final, complete, polished summary
+- Must sound human-written and professional
 
 Return only the professional summary text, nothing else.
 `;
@@ -272,22 +296,29 @@ DEEP OPTIMIZATION REQUIREMENTS:
 1. FACTUAL ACCURACY: Keep all factual information accurate (company, dates, basic role)
 2. TITLE ENHANCEMENT: Optimize job title to match industry standards and target role level
 3. RESPONSIBILITY TRANSFORMATION: Convert generic responsibilities into achievement-focused narratives
-4. QUANTIFICATION: Add specific metrics, percentages, numbers wherever possible
-5. KEYWORD INTEGRATION: Naturally incorporate keywords from job requirements
+4. NATURAL QUANTIFICATION: ONLY use numbers/metrics that already exist in the original experience or can be reasonably inferred from the actual work described. NEVER invent statistics.
+5. KEYWORD INTEGRATION: Naturally incorporate keywords from job requirements ONLY if they relate to actual work performed
 6. ACTION VERBS: Use powerful action verbs that match job description language
-7. IMPACT FOCUS: Emphasize results, outcomes, and business impact
-8. SKILL HIGHLIGHTING: Prominently feature technologies and skills mentioned in job requirements
-9. PROGRESSION NARRATIVE: Show increasing responsibility and expertise
-10. ATS OPTIMIZATION: Use terminology that will score well in ATS systems
+7. IMPACT FOCUS: Emphasize results and outcomes based on actual work performed
+8. SKILL HIGHLIGHTING: ONLY feature technologies and skills that are explicitly mentioned in the original experience
+9. PROGRESSION NARRATIVE: Show increasing responsibility and expertise based on actual role progression
+10. ATS OPTIMIZATION: Use terminology that will score well in ATS systems while staying truthful
 
 DETAILED ANALYSIS AREAS:
-- Technical Skills: Extract and enhance technical accomplishments
-- Leadership: Highlight any team leadership, mentoring, or project management
-- Problem Solving: Emphasize complex problems solved and innovative solutions
-- Business Impact: Quantify revenue impact, cost savings, efficiency improvements
-- Process Improvement: Show how you optimized processes or workflows
-- Collaboration: Demonstrate cross-functional teamwork and communication
-- Innovation: Highlight new technologies adopted or processes created
+- Technical Skills: Extract and enhance technical accomplishments ONLY from actual work performed
+- Leadership: Highlight any team leadership, mentoring, or project management ONLY if actually done
+- Problem Solving: Emphasize complex problems solved ONLY based on actual work described
+- Business Impact: Describe impact and results ONLY from actual achievements mentioned or reasonably inferred
+- Process Improvement: Show how you optimized processes ONLY if this was actually done
+- Collaboration: Demonstrate cross-functional teamwork ONLY if actually performed
+- Innovation: Highlight new technologies adopted ONLY if actually used in this role
+
+CRITICAL AUTHENTICITY RULES:
+- NEVER invent metrics, percentages, or numbers not present in original experience
+- NEVER add technologies or skills not mentioned in the original experience
+- NEVER claim achievements that cannot be reasonably inferred from the actual work described
+- NEVER use phrases like "over X", "resulting in X%", "improved by X%" unless this data exists in the original
+- Focus on making existing accomplishments sound more professional and impactful rather than adding fake metrics
 
 Return optimized experience in this exact JSON structure:
 {
@@ -296,19 +327,19 @@ Return optimized experience in this exact JSON structure:
   "startDate": "original start date",
   "endDate": "original end date", 
   "location": "enhanced location (city, state/country)",
-  "description": "comprehensive achievement-focused description with bullet points using • separator. Each bullet should be a complete achievement with quantified results where possible.",
+  "description": "comprehensive achievement-focused description with bullet points using • separator. Each bullet should describe actual work performed with professional language, focusing on real accomplishments without fabricated metrics.",
   "keyAchievements": [
-    "Major achievement 1 with specific metrics",
-    "Major achievement 2 showing business impact",
-    "Major achievement 3 demonstrating technical expertise"
+    "Major achievement 1 based on actual work performed",
+    "Major achievement 2 from real responsibilities described",
+    "Major achievement 3 from actual technical work done"
   ],
-  "technologiesUsed": ["technology1", "technology2", "..."],
-  "skillsDemonstrated": ["skill1", "skill2", "..."],
+  "technologiesUsed": ["ONLY technologies explicitly mentioned in original experience"],
+  "skillsDemonstrated": ["ONLY skills that can be inferred from actual work described"],
   "relevanceScore": 85,
   "optimizationNotes": "Brief explanation of how this role relates to target position"
 }
 
-Make each bullet point in the description compelling, specific, and achievement-focused. Use numbers, percentages, and concrete results wherever possible.
+Make each bullet point in the description compelling and professional while staying truthful to actual work performed. Enhance the language and impact without inventing metrics or achievements.
 `;
 
     const response = await this.aiService.generateContent(prompt);
@@ -368,26 +399,32 @@ Is Priority Project: ${isPriority}
 
 Optimization Requirements:
 1. Keep all factual information accurate
-2. Enhance project description to highlight relevant achievements
-3. Emphasize technologies and skills mentioned in job requirements
-4. Quantify impact and results where possible
-5. Highlight transferable skills and methodologies
-6. Use keywords that match job description
-7. Focus on business impact and technical challenges solved
-8. Show progression in complexity or responsibility
+2. Enhance project description to highlight relevant achievements based on actual work
+3. ONLY emphasize technologies and skills that were actually used in the original project
+4. Describe impact and results ONLY from actual project scope and functionality
+5. Highlight transferable skills ONLY if they can be inferred from actual work done
+6. Use keywords that match job description ONLY if they relate to actual project work
+7. Focus on actual technical challenges solved and functionality built
+8. Show progression based on actual project complexity
+
+CRITICAL AUTHENTICITY RULES:
+- NEVER add technologies not mentioned in the original project
+- NEVER invent business metrics or quantified impact not present in original
+- NEVER claim features or capabilities not described in original project
+- Focus on professional presentation of actual project work
 
 Return optimized project in this exact JSON structure:
 {
   "name": "enhanced project name",
   "description": "compelling description highlighting relevance and impact",
-  "technologies": ["tech1", "tech2", ...],
-  "keyFeatures": ["feature1", "feature2", ...],
-  "impact": "quantified business or technical impact",
+  "technologies": ["ONLY technologies actually used in original project"],
+  "keyFeatures": ["actual feature1 from original project", "actual feature2 from original project"],
+  "impact": "actual impact or results based on original project description",
   "relevanceScore": 85,
   "keywordsMatched": ["keyword1", "keyword2", ...]
 }
 
-Make the project description achievement-focused and demonstrate clear value delivery.
+Make the project description professional and focused on actual work performed and real value delivered without fabricating metrics or features.
 `;
 
     const response = await this.aiService.generateContent(prompt);
@@ -413,13 +450,15 @@ Preferred Skills: ${JSON.stringify(jobAnalysis.preferredSkills, null, 2)}
 Industry: ${jobAnalysis.industry}
 
 Optimization Rules:
-1. Prioritize skills mentioned in job requirements
-2. Create dynamic categories based on the target role and industry
-3. Include skill variations (e.g., "JavaScript" and "JS")
-4. Remove or de-emphasize irrelevant skills
-5. Add soft skills mentioned in job requirements
-6. Use exact terminology from job description
-7. Group by relevance: Required → Preferred → Additional
+1. ONLY include skills that are present in the original CV
+2. Prioritize skills from original CV that are also mentioned in job requirements
+3. Reorganize existing skills into categories based on target role and industry  
+4. Include skill variations from original CV (e.g., if original has "JavaScript", can also include "JS")
+5. Remove or de-emphasize irrelevant skills from original CV
+6. NEVER add skills not present in the original CV, even if mentioned in job requirements
+7. Group existing skills by relevance: Most Relevant → Somewhat Relevant → Supporting Skills
+
+CRITICAL RULE: This is REORGANIZATION of existing skills, NOT addition of new skills. Only work with what's already in the original CV.
 
 IMPORTANT: Return ONLY valid JSON in this exact format - no extra text, no comments, no explanations:
 {
@@ -467,6 +506,13 @@ Enhancement Rules:
 5. Emphasize transferable skills for career changers
 6. Add context for international or non-standard degrees
 
+CRITICAL: Never include ANY of the following:
+- Placeholder text in brackets like [Add details...] or [course name]
+- Suggestions or optional additions in brackets
+- Incomplete sentences or suggestions for improvement
+- Any text that suggests what could be added
+- Return ONLY final, complete, polished descriptions with NO placeholders
+
 IMPORTANT: Return ONLY valid JSON in this exact format - no extra text, no comments, no explanations:
 [
   {
@@ -504,9 +550,7 @@ Ensure the JSON is properly formatted with double quotes around all property nam
   async optimizeCertifications(originalCertifications, jobAnalysis) {
     if (!originalCertifications || originalCertifications.length === 0) {
       return [];
-    }
-
-    const prompt = `
+    }    const prompt = `
 Optimize the certifications section for maximum relevance to the target job:
 
 Original Certifications: ${JSON.stringify(originalCertifications, null, 2)}
@@ -514,25 +558,25 @@ Job Requirements: ${JSON.stringify(jobAnalysis, null, 2)}
 
 Optimization Rules:
 1. Prioritize certifications relevant to the job requirements
-2. Add context for how each certification relates to the role
+2. Add brief context for how each certification relates to the role
 3. Highlight recent or advanced certifications
-4. Include skills gained from each certification
+4. Include only key relevant skills (max 5 per certification)
 5. Reorder by relevance to the target position
 6. Add completion dates if missing
-7. Enhance descriptions to show practical application
 
 Return optimized certifications array maintaining this structure:
 [
   {
     "name": "certification name",
-    "issuer": "issuing organization",
+    "issuer": "issuing organization", 
     "date": "completion date",
-    "relevance": "how this relates to the target job",
-    "skills": "key skills gained from this certification",
+    "relevance": "brief 1-sentence explanation of relevance to target job",
+    "skills": "5 key relevant skills maximum (e.g., JavaScript, React, MongoDB, API Development, Testing)",
     "priority": 1-10
   }
 ]
 
+CRITICAL: Keep skills field concise - skill names only, separated by commas, maximum 5 skills.
 Sort by priority (highest first) and relevance to the job requirements.
 `;
 
@@ -725,7 +769,14 @@ Rules for summary:
 - Include specific years of relevant experience
 - Highlight 2-3 key achievements matching job requirements
 - Use confident, human language
-- Avoid clichés`;
+- Avoid clichés
+
+CRITICAL: Never include ANY of the following:
+- Placeholder text in brackets like [Add details...] or [company name]
+- Suggestions or optional additions in brackets
+- Incomplete sentences or suggestions for improvement
+- Any text that suggests what could be added
+- Return ONLY final, complete, polished content with NO placeholders`;
 
     const response = await this.aiService.generateContent(prompt);
     return this.aiService.parseAIResponse(response);
@@ -733,14 +784,14 @@ Rules for summary:
 
   /**
    * Optimize all sections with error handling
-   */
-  async optimizeAllSections(cv, analysis) {
+   */  async optimizeAllSections(cv, analysis) {
     const results = {
       experience: null,
       projects: null,
       skills: null,
       education: null,
-      certifications: null
+      certifications: null,
+      languages: null
     };
 
     // Try to optimize each section, but don't fail the entire process if one fails
@@ -749,10 +800,11 @@ Rules for summary:
       this.safeOptimizeProjects(cv.projects, analysis),
       this.safeOptimizeSkills(cv.skills, analysis),
       this.safeOptimizeEducation(cv.education, analysis),
-      this.safeOptimizeCertifications(cv.certifications, analysis)
+      this.safeOptimizeCertifications(cv.certifications, analysis),
+      this.safeOptimizeLanguages(cv.languages, analysis)
     ];
 
-    const [experience, projects, skills, education, certifications] = await Promise.allSettled(optimizationPromises);
+    const [experience, projects, skills, education, certifications, languages] = await Promise.allSettled(optimizationPromises);
 
     // Extract successful results
     if (experience.status === 'fulfilled') results.experience = experience.value;
@@ -760,6 +812,7 @@ Rules for summary:
     if (skills.status === 'fulfilled') results.skills = skills.value;
     if (education.status === 'fulfilled') results.education = education.value;
     if (certifications.status === 'fulfilled') results.certifications = certifications.value;
+    if (languages.status === 'fulfilled') results.languages = languages.value;
 
     return results;
   }
@@ -815,6 +868,16 @@ Rules for summary:
     }
   }
 
+  async safeOptimizeLanguages(languages, analysis) {
+    try {
+      if (!languages || languages.length === 0) return null;
+      return await this.optimizeLanguages(languages, analysis.jobAnalysis);
+    } catch (error) {
+      console.log('⚠️ Languages optimization failed, using original:', error.message);
+      return null;
+    }
+  }
+
   /**
    * Optimize experience section with detailed analysis
    */
@@ -835,9 +898,9 @@ IMPORTANT: Return ONLY valid JSON array in this exact format:
     "position": "enhanced position title",
     "period": "original period",
     "responsibilities": [
-      "Enhanced responsibility 1 with quantified results",
-      "Enhanced responsibility 2 with relevant keywords",
-      "Enhanced responsibility 3 with impact metrics"
+      "Enhanced responsibility 1 focusing on actual work performed",
+      "Enhanced responsibility 2 with professional language", 
+      "Enhanced responsibility 3 based on real achievements"
     ]
   }
 ]
@@ -846,11 +909,18 @@ Enhancement Requirements:
 1. Keep all factual information accurate (company, dates)
 2. Enhance position titles to match industry standards
 3. Transform generic descriptions into achievement-focused narratives
-4. Quantify accomplishments with metrics where possible
-5. Highlight technologies and skills from job requirements
-6. Use powerful action verbs matching job description
-7. Focus on results and impact, not just duties
-8. Incorporate relevant keywords naturally`;
+4. ONLY use metrics and numbers that exist in the original experience or can be reasonably inferred
+5. ONLY highlight technologies and skills that are mentioned in the original experience
+6. Use powerful action verbs matching job description while staying truthful
+7. Focus on professional presentation of actual work performed
+8. Incorporate relevant keywords naturally ONLY if they relate to actual work done
+
+CRITICAL: Never include ANY of the following:
+- Placeholder text in brackets like [Add details...] or [project name]
+- Suggestions or optional additions in brackets
+- Incomplete sentences or suggestions for improvement
+- Any text that suggests what could be added
+- Return ONLY final, complete, polished descriptions with NO placeholders`;
 
     const response = await this.aiService.generateContent(prompt);
     return this.aiService.parseAIResponse(response);
@@ -875,15 +945,23 @@ IMPORTANT: Return ONLY valid JSON array in this exact format:
     "name": "project name",
     "description": "enhanced description highlighting relevance to target role",
     "technologies": ["tech1", "tech2"],
-    "keyFeatures": ["feature1 with business impact", "feature2 with metrics"]
+    "keyFeatures": ["feature1 based on actual project work", "feature2 from real functionality built"]
   }
 ]
 
 Enhancement focus:
-1. Highlight technologies matching job requirements
-2. Emphasize business impact and results
-3. Use industry-relevant terminology
-4. Show problem-solving capabilities`;
+1. ONLY highlight technologies that were actually used in the original project
+2. Emphasize impact and results based on actual project scope and functionality
+3. Use industry-relevant terminology while staying truthful to actual work
+4. Show problem-solving capabilities based on real challenges addressed
+5. NEVER invent metrics or business impact not present in original project description
+
+CRITICAL: Never include ANY of the following:
+- Placeholder text in brackets like [Add details...] or [project name]
+- Suggestions or optional additions in brackets
+- Incomplete sentences or suggestions for improvement
+- Any text that suggests what could be added
+- Return ONLY final, complete, polished descriptions with NO placeholders`;
 
     const response = await this.aiService.generateContent(prompt);
     return this.aiService.parseAIResponse(response);
@@ -910,11 +988,22 @@ IMPORTANT: Return ONLY valid JSON in this exact format:
 }
 
 Optimization Rules:
-1. Prioritize skills mentioned in job requirements
-2. Use exact terminology from job description
-3. Group by relevance: Required → Preferred → Additional
-4. Include skill variations (e.g., "JavaScript" and "JS")
-5. Remove or de-emphasize irrelevant skills`;
+1. ONLY use skills that exist in the original CV
+2. Prioritize existing skills that are also mentioned in job requirements
+3. Reorganize existing skills by relevance to the target role
+4. Include skill variations from original CV (e.g., if original has "JavaScript", can show as "JS")
+5. De-emphasize irrelevant skills from original CV
+6. NEVER add new skills not present in original CV
+
+CRITICAL AUTHENTICITY RULE: This is REORGANIZATION of existing skills only. Do not add any skills that are not already present in the original CV, even if they appear in job requirements.
+
+CRITICAL: Never include ANY of the following:
+- Skills not present in the original CV
+- Placeholder text in brackets like [Add details...] or [skill name]
+- Suggestions or optional additions in brackets
+- Incomplete sentences or suggestions for improvement
+- Any text that suggests what could be added
+- Return ONLY final, complete skill categories with NO placeholders using ONLY existing skills`;
 
     const response = await this.aiService.generateContent(prompt);
     return this.aiService.parseAIResponse(response);
@@ -946,12 +1035,18 @@ Enhancement Rules:
 2. Highlight relevant coursework or projects
 3. Mention relevant academic achievements
 4. Emphasize transferable skills
-5. Add context for international or non-standard degrees`;
+5. Add context for international or non-standard degrees
+
+CRITICAL: Never include ANY of the following:
+- Placeholder text in brackets like [Add details...] or [course name]
+- Suggestions or optional additions in brackets
+- Incomplete sentences or suggestions for improvement
+- Any text that suggests what could be added
+- Return ONLY final, complete, polished descriptions with NO placeholders`;
 
     const response = await this.aiService.generateContent(prompt);
     return this.aiService.parseAIResponse(response);
   }
-
   /**
    * Optimize certifications section with detailed relevance
    */
@@ -968,19 +1063,86 @@ IMPORTANT: Return ONLY valid JSON array in this exact format:
   {
     "name": "certification name",
     "issuer": "issuing organization",
-    "type": "certification type",
-    "skills": "enhanced skills description with relevance to target role"
+    "type": "certification type", 
+    "skills": "3-5 key relevant skills only (e.g., JavaScript, React, API Development)"
   }
 ]
 
+CRITICAL RULES for skills field:
+1. Maximum 5 key skills per certification
+2. ONLY include skills that are actually taught/covered by this specific certification
+3. Use skill names only - NO descriptions or explanations
+4. Separate skills with commas only
+5. Focus on actual certification content, not job requirements
+6. Keep it concise - Example: "MongoDB, Express.js, React, Node.js" (only if these are actually covered by the certification)
+7. NEVER add skills just because they appear in job requirements if they're not part of the certification
+
 Enhancement focus:
 1. Prioritize certifications relevant to job requirements
-2. Highlight transferable skills from each certification
-3. Use industry-standard terminology
-4. Connect certifications to job responsibilities`;
+2. List only the most relevant technical skills learned
+3. Use exact skill names from job description when possible
+4. NO verbose descriptions in skills field
+
+CRITICAL: Never include ANY of the following:
+- Placeholder text in brackets like [Add details...] or [certification name]
+- Suggestions or optional additions in brackets
+- Incomplete sentences or suggestions for improvement
+- Any text that suggests what could be added
+- Return ONLY final, complete, polished descriptions with NO placeholders`;
 
     const response = await this.aiService.generateContent(prompt);
     return this.aiService.parseAIResponse(response);
+  }
+
+  /**
+   * Optimize languages section for job relevance
+   */
+  async optimizeLanguages(originalLanguages, jobAnalysis) {
+    if (!originalLanguages || originalLanguages.length === 0) {
+      return [];
+    }
+
+    const prompt = `
+Optimize the languages section for the target job:
+
+Original Languages: ${JSON.stringify(originalLanguages, null, 2)}
+Job Requirements: ${JSON.stringify(jobAnalysis, null, 2)}
+
+Rules:
+1. Prioritize languages mentioned in job requirements
+2. Maintain accurate proficiency levels
+3. Add relevant business/professional context where applicable
+4. Consider the job location and company international presence
+5. Keep all original languages but reorder by relevance
+
+CRITICAL: Never include ANY of the following:
+- Placeholder text in brackets like [Add details...] or [language name]
+- Suggestions or optional additions in brackets
+- Incomplete sentences or suggestions for improvement
+- Any text that suggests what could be added
+- Return ONLY final, complete, polished descriptions with NO placeholders
+
+IMPORTANT: Return ONLY valid JSON array in this exact format:
+[
+  {
+    "language": "language name",
+    "level": "proficiency level"
+  }
+]
+
+Examples of good levels: "Native", "Professional", "Conversational", "Basic"
+`;
+
+    try {
+      const result = await this.aiService.generateContent(prompt);
+      const optimizedLanguages = this.aiService.parseAIResponse(result);
+      
+      console.log('✅ Languages optimized successfully');
+      return Array.isArray(optimizedLanguages) ? optimizedLanguages : originalLanguages;
+    } catch (error) {
+      console.log('⚠️ Languages optimization failed, using original:', error.message);
+      return originalLanguages;
+    }
   }
 }
 

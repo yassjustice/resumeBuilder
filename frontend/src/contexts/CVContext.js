@@ -260,10 +260,11 @@ export const CVProvider = ({ children }) => {
           field: edu.field || '',
           startDate,
           endDate,
-          grade: edu.grade || ''
-        };      }),      skills: skills || {}, // Keep original format - normalize in CV Builder
+          grade: edu.grade || ''        };
+      }),
+      skills: skills || {}, // Keep original format - normalize in CV Builder
       languages: languages.map(lang => ({
-        name: lang.language || lang.name || '',
+        language: lang.language || lang.name || '',
         level: lang.level || 'Intermediate'
       })),
       certifications: certifications.map(cert => ({
@@ -525,9 +526,8 @@ export const CVProvider = ({ children }) => {
           type: 'Certificate', // Default type
           skills: cert.url || '' // Use URL field for skills since it's available
         })),
-      additionalExperience: [],
-      languages: languages.map(lang => ({
-        language: lang.name || '',
+      additionalExperience: [],      languages: languages.map(lang => ({
+        language: lang.language || lang.name || '',
         level: lang.level || 'Intermediate'
       })),
       interests: []

@@ -67,14 +67,7 @@ export const DashboardPage = () => {
       description: 'Build or update your professional CV',
       icon: '📝',
       link: '/cv-builder',
-      color: 'bg-blue-500 hover:bg-blue-600'
-    },    {
-      title: 'Job Application',
-      description: 'Basic job application tools',
-      icon: '🎯',
-      link: '/job-application',
-      color: 'bg-green-500 hover:bg-green-600'
-    },
+      color: 'bg-blue-500 hover:bg-blue-600'    },
     {
       title: 'AI Job Tailor',
       description: 'Advanced AI-powered CV tailoring with cover letters',
@@ -352,8 +345,7 @@ export const DashboardPage = () => {
                         <Button variant="outline" size="sm">
                           📝 Edit CV
                         </Button>
-                      </Link>
-                      <Link to="/job-application">
+                      </Link>                      <Link to="/advanced-job-application">
                         <Button variant="primary" size="sm">
                           🎯 Apply for Jobs
                         </Button>
@@ -427,8 +419,7 @@ export const DashboardPage = () => {
                     <Button variant="outline" size="sm">
                       Edit CV
                     </Button>
-                  </Link>
-                  <Link to="/job-application">
+                  </Link>                  <Link to="/advanced-job-application">
                     <Button variant="primary" size="sm">
                       Apply for Jobs
                     </Button>

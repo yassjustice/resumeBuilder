@@ -21,8 +21,8 @@ export const CVBuilderPage = () => {
 
   // Enhanced hooks for better UX
   const toast = useToast();
-  const { trackComponentError } = useComponentPerformance('CVBuilderPage');
-  const { trackApiCall } = usePerformanceMonitor();
+  // const { trackComponentError } = useComponentPerformance('CVBuilderPage');
+  // const { trackApiCall } = usePerformanceMonitor();
 
   const [activeStep, setActiveStep] = useState(0);
   const [uploadMethod, setUploadMethod] = useState('upload'); // 'upload' or 'paste'
@@ -132,22 +132,14 @@ export const CVBuilderPage = () => {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [formData, saveCV]);useEffect(() => {
+  }, [formData, saveCV]);  useEffect(() => {
     if (cvData) {
-      // Debug: Log the original cvData
-      console.log('🔍 CVBuilder: Original cvData received:', cvData);
-      console.log('🔍 CVBuilder: Original skills format:', cvData.skills);
-      console.log('🔍 CVBuilder: Skills type:', typeof cvData.skills);
-      
       // Ensure no null values in the form data
       const sanitizedData = sanitizeFormData(cvData);
-      console.log('🔍 CVBuilder: After sanitization:', sanitizedData.skills);
       
       // Normalize skills from object format to array format for UI
       if (sanitizedData.skills) {
         sanitizedData.skills = normalizeSkillsForUI(sanitizedData.skills);
-        console.log('🔍 CVBuilder: After normalization:', sanitizedData.skills);
-        console.log('🔍 CVBuilder: Skills count after normalization:', sanitizedData.skills?.length || 0);
       }
       
       setFormData(sanitizedData);
@@ -393,7 +385,7 @@ export const CVBuilderPage = () => {
       }
     } catch (error) {
       console.error('Manual save: Failed to save CV:', error);
-      trackComponentError(error);
+      // trackComponentError(error);
       setUploadError(error.message || 'Failed to save CV');
       toast.toast.error('Save failed: ' + error.message);
     } finally {
@@ -947,9 +939,8 @@ export const CVBuilderPage = () => {
                       <>📄 Download CV</>
                     )}
                   </Button>
-                  
-                  <Button
-                    onClick={() => navigate('/job-application')}
+                    <Button
+                    onClick={() => navigate('/advanced-job-application')}
                     variant="primary"
                     className="w-full bg-blue-600 hover:bg-blue-700"
                   >

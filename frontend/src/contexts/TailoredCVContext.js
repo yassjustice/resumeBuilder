@@ -97,26 +97,32 @@ export const TailoredCVProvider = ({ children }) => {
   const clearAllData = useCallback(() => {
     dispatch({ type: 'CLEAR_ALL_DATA' });
   }, []);
-
   // Extract job offer from text or file
   const extractJobOffer = useCallback(async (text) => {
     try {
       setLoading(true);
       clearError();
       
-      console.log('🔍 TailoredCV: Extracting job offer from text...');
+      console.log('🔍 TailoredCV: Extracting job offer from text...', text);
       const response = await api.extractJobOfferFromText(text);
+      console.log('📦 TailoredCV: API response:', response);
       
       if (response?.success) {
-        const jobOffer = response.jobOffer || response;
-        console.log('✅ TailoredCV: Job offer extracted successfully');
+        const jobOffer = response.data || response.jobOffer || response;
+        console.log('✅ TailoredCV: Job offer extracted successfully', jobOffer);
         dispatch({ type: 'SET_JOB_OFFER', payload: jobOffer });
         return { success: true, jobOffer };
       } else {
-        throw new Error(response?.error || 'Failed to extract job offer');
+        console.log('❌ TailoredCV: API response indicates failure:', response);
+        throw new Error(response?.error || response?.message || 'Failed to extract job offer');
       }
     } catch (error) {
       console.error('❌ TailoredCV: Job offer extraction failed:', error);
+      console.error('❌ TailoredCV: Error details:', {
+        message: error.message,
+        status: error.status,
+        response: error.response
+      });
       const errorMessage = error.message || 'Failed to extract job offer';
       setError(errorMessage);
       return { success: false, error: errorMessage };
@@ -146,6 +152,13 @@ export const TailoredCVProvider = ({ children }) => {
         additionalRequirements: additionalRequirements
       });
 
+      console.log('📦 TailoredCV: API response:', response);
+      console.log('📦 TailoredCV: Response structure:', {
+        hasSuccess: !!response?.success,
+        hasData: !!response?.data,
+        responseKeys: Object.keys(response || {})
+      });
+
       if (response?.success || response?.data) {
         const tailoredCV = response.data || response;
         console.log('✅ TailoredCV: CV tailored successfully');
@@ -161,7 +174,8 @@ export const TailoredCVProvider = ({ children }) => {
         dispatch({ type: 'SET_TAILORED_CV', payload: tailoredCV });
         return { success: true, tailoredCV };
       } else {
-        throw new Error(response?.error || 'Failed to generate tailored CV');
+        console.log('❌ TailoredCV: Response does not indicate success:', response);
+        throw new Error(response?.error || response?.message || 'Failed to generate tailored CV');
       }
     } catch (error) {
       console.error('❌ TailoredCV: Generation failed:', error);
@@ -181,22 +195,22 @@ export const TailoredCVProvider = ({ children }) => {
       setLoading(true);
       clearError();
       
-      console.log('📝 TailoredCV: Generating cover letter...');
-
-      const response = await api.generateCoverLetter({
+      console.log('📝 TailoredCV: Generating cover letter...');      const response = await api.generateCoverLetter({
         cv: originalCV,
         jobOffer: jobOffer,
         additionalRequirements: additionalRequirements
       });
 
-      if (response?.success || response?.coverLetter) {
-        const coverLetter = response.coverLetter || response;
-        console.log('✅ TailoredCV: Cover letter generated successfully');
+      console.log('📦 TailoredCV: Cover letter API response:', response);
+
+      if (response?.success) {
+        const coverLetter = response.data || response;
+        console.log('✅ TailoredCV: Cover letter generated successfully', coverLetter);
         
         dispatch({ type: 'SET_COVER_LETTER', payload: coverLetter });
         return { success: true, coverLetter };
       } else {
-        throw new Error(response?.error || 'Failed to generate cover letter');
+        throw new Error(response?.error || response?.message || 'Failed to generate cover letter');
       }
     } catch (error) {
       console.error('❌ TailoredCV: Cover letter generation failed:', error);
