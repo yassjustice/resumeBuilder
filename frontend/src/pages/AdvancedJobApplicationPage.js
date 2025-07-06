@@ -2,16 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useCV } from '../contexts/CVContext';
 import { useTailoredCV } from '../contexts/TailoredCVContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import Button from '../components/UI/Button';
 import Input from '../components/UI/Input';
 import Textarea from '../components/UI/Textarea';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import LanguageSelector from '../components/Language/LanguageSelector';
 import TailoredCVPreview from '../components/TailoredCV/TailoredCVPreview';
 import TailoredCVEditor from '../components/TailoredCV/TailoredCVEditor';
 import { api } from '../services/api';
 
 export const AdvancedJobApplicationPage = () => {
   const { cvData, loadUserCV } = useCV();
+  const { currentLanguage, changeLanguage, isRTL, getFieldLabels } = useLanguage();
   const { 
     jobOffer,
     tailoredCV,
@@ -45,10 +48,11 @@ export const AdvancedJobApplicationPage = () => {
 
   const steps = [
     { id: 0, title: 'Job Offer', icon: '📋' },
-    { id: 1, title: 'Requirements', icon: '📝' },
-    { id: 2, title: 'Generate', icon: '🤖' },
-    { id: 3, title: 'Review & Edit', icon: '✏️' },
-    { id: 4, title: 'Download', icon: '📥' }
+    { id: 1, title: 'Language', icon: '🌐' },
+    { id: 2, title: 'Requirements', icon: '📝' },
+    { id: 3, title: 'Generate', icon: '🤖' },
+    { id: 4, title: 'Review & Edit', icon: '✏️' },
+    { id: 5, title: 'Download', icon: '📥' }
   ];
 
   useEffect(() => {
@@ -125,13 +129,28 @@ export const AdvancedJobApplicationPage = () => {
       
       if (result.success) {
         console.log('✅ Job offer processed successfully');
-        setStep(1);
+        setStep(1); // Move to language selection step
       } else {
         setLocalError(result.error || 'Failed to process job offer');
       }
     } catch (error) {
       console.error('Error processing job offer:', error);
       setLocalError(error.message || 'Failed to process job offer');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleLanguageSelection = async (language) => {
+    setIsProcessing(true);
+    setLocalError('');
+    
+    try {
+      changeLanguage(language);
+      setStep(2); // Move to requirements step
+    } catch (error) {
+      console.error('Language selection error:', error);
+      setLocalError('Failed to apply language settings');
     } finally {
       setIsProcessing(false);
     }
@@ -150,10 +169,10 @@ export const AdvancedJobApplicationPage = () => {
     try {
       console.log('🎯 Starting advanced CV tailoring and cover letter generation...');
       
-      // Generate both tailored CV and cover letter
+      // Generate both tailored CV and cover letter with language selection
       const [cvResult, coverLetterResult] = await Promise.all([
-        generateTailoredCV(cvData, jobOffer, additionalRequirements),
-        generateCoverLetter(cvData, jobOffer, additionalRequirements)
+        generateTailoredCV(cvData, jobOffer, additionalRequirements, currentLanguage),
+        generateCoverLetter(cvData, jobOffer, additionalRequirements, currentLanguage)
       ]);
 
       if (!cvResult.success) {
@@ -164,7 +183,7 @@ export const AdvancedJobApplicationPage = () => {
       }      console.log('✅ Documents generated successfully');
       setSuccessMessage('🎉 Your tailored CV and cover letter have been generated successfully!');
       setTimeout(() => setSuccessMessage(''), 5000); // Clear after 5 seconds
-      setStep(3); // Move to review step
+      setStep(4); // Move to review step
     } catch (err) {
       console.error('Document generation error:', err);
       setLocalError(err.message || 'Failed to generate documents');
@@ -329,10 +348,42 @@ export const AdvancedJobApplicationPage = () => {
 
       case 1:
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                Job Analysis Results
+                Select Language
+              </h2>
+              <p className="text-gray-600 mb-8">
+                Choose the language for your tailored CV and cover letter
+              </p>
+            </div>
+
+            <LanguageSelector 
+              onLanguageSelect={handleLanguageSelection}
+              dataType="jobOffer"
+            />
+
+            {localError && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
+                <p className="text-sm text-red-600">{localError}</p>
+              </div>
+            )}
+
+            {isProcessing && (
+              <div className="text-center">
+                <LoadingSpinner size="sm" />
+                <p className="text-sm text-gray-600 mt-2">Applying language settings...</p>
+              </div>
+            )}
+          </div>
+        );
+
+      case 2:
+        return (
+          <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                {getFieldLabels().jobAnalysis || 'Job Analysis Results'}
               </h2>
               <p className="text-gray-600 mb-8">
                 Review the extracted job details and add any additional requirements
@@ -400,7 +451,7 @@ export const AdvancedJobApplicationPage = () => {
                 Back
               </Button>
               <Button
-                onClick={() => setStep(2)}
+                onClick={() => setStep(3)}
                 variant="primary"
               >
                 Continue to Generation
@@ -409,13 +460,14 @@ export const AdvancedJobApplicationPage = () => {
           </div>
         );
 
-      case 2:
+      case 3:
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                Generate Tailored Documents
-              </h2>              <p className="text-gray-600 mb-8">
+                {getFieldLabels().generateDocuments || 'Generate Tailored Documents'}
+              </h2>
+              <p className="text-gray-600 mb-8">
                 Create a perfectly tailored CV and cover letter for this position
               </p>
             </div>
@@ -484,7 +536,7 @@ export const AdvancedJobApplicationPage = () => {
 
             <div className="flex justify-between">
               <Button
-                onClick={() => setStep(1)}
+                onClick={() => setStep(2)}
                 variant="outline"
                 disabled={isProcessing || aiProcessing}
               >
@@ -507,13 +559,16 @@ export const AdvancedJobApplicationPage = () => {
               </Button>
             </div>
           </div>
-        );      case 3:
+        );
+
+      case 4:
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                Review & Edit Your Tailored CV
-              </h2>              <p className="text-gray-600 mb-8">
+                {getFieldLabels().reviewEdit || 'Review & Edit Your Tailored CV'}
+              </h2>
+              <p className="text-gray-600 mb-8">
                 Review your tailored documents and make any necessary adjustments
               </p>
             </div>
@@ -864,14 +919,14 @@ export const AdvancedJobApplicationPage = () => {
                 {/* Navigation */}
                 <div className="flex justify-between">
                   <Button
-                    onClick={() => setStep(2)}
+                    onClick={() => setStep(3)}
                     variant="outline"
                     disabled={isProcessing || aiProcessing}
                   >
                     Back to Generation
                   </Button>
                   <Button
-                    onClick={() => setStep(4)}
+                    onClick={() => setStep(5)}
                     variant="primary"
                     disabled={isProcessing || aiProcessing}
                   >
@@ -885,7 +940,7 @@ export const AdvancedJobApplicationPage = () => {
               <div className="text-center py-8">
                 <p className="text-gray-500 mb-4">No tailored CV available</p>
                 <Button
-                  onClick={() => setStep(2)}
+                  onClick={() => setStep(3)}
                   variant="primary"
                 >
                   Generate CV First
@@ -895,12 +950,12 @@ export const AdvancedJobApplicationPage = () => {
           </div>
         );
 
-      case 4:
+      case 5:
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                Download Your Documents
+                {getFieldLabels().downloadDocuments || 'Download Your Documents'}
               </h2>
               <p className="text-gray-600 mb-8">
                 Your tailored CV and cover letter are ready for download

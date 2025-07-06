@@ -2,17 +2,17 @@
  * Advanced CV Tailoring Service - Modular and Clean Architecture
  * Enhanced with all CV Builder advanced features: categorized skills, language support, advanced prompting, translation
  */
-const AIService = require('./aiService');
-const TranslationService = require('./translationService');
+const AIService = require('../aiService');
+const TranslationService = require('../translationService');
 
 // Import modular components
-const CVAnalyzer = require('./cvTailoring/CVAnalyzer');
-const CoreOptimizer = require('./cvTailoring/CoreOptimizer');
-const SectionOptimizer = require('./cvTailoring/SectionOptimizer');
-const DateProcessor = require('./cvTailoring/DateProcessor');
-const JobOfferExtractor = require('./cvTailoring/JobOfferExtractor');
-const CVNormalizer = require('./cvTailoring/CVNormalizer');
-const AuthenticityValidator = require('./cvTailoring/AuthenticityValidator');
+const CVAnalyzer = require('./CVAnalyzer');
+const CoreOptimizer = require('./CoreOptimizer');
+const SectionOptimizer = require('./SectionOptimizer');
+const DateProcessor = require('./DateProcessor');
+const JobOfferExtractor = require('./JobOfferExtractor');
+const CVNormalizer = require('./CVNormalizer');
+const AuthenticityValidator = require('./AuthenticityValidator');
 
 class CVTailoringService {
   constructor() {

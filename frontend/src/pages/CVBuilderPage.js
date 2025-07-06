@@ -3,20 +3,27 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useCV } from '../contexts/CVContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import Button from '../components/UI/Button';
 import Input from '../components/UI/Input';
 import Textarea from '../components/UI/Textarea';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import LanguageSelector from '../components/Language/LanguageSelector';
 import { api } from '../services/api';
-import { categorizeSkillsArray, normalizeSkillsForUI } from '../utils/skillsCategorization';
+import LanguageTransformationService from '../services/languageTransformationService';
+import { categorizeSkillsArray, normalizeSkillsForUI, flattenSkillsObject } from '../utils/skillsCategorization';
+import { formatDateForInput, formatDateForStorage, isDatePresent } from '../utils/dateUtils';
 // Add imports for new components and hooks
 import ErrorBoundary from '../components/UI/ErrorBoundary';
+import CategorizedSkillsInput from '../components/Skills/CategorizedSkillsInput';
+import QuotaStatusWidget from '../components/Debug/QuotaStatusWidget';
 import { useToast } from '../components/UI/ToastProvider';
 import { useFormValidation, cvValidationSchema } from '../hooks/useFormValidation';
 import { usePerformanceMonitor, useComponentPerformance } from '../hooks/usePerformance';
 
 export const CVBuilderPage = () => {
   const { cvData, updateCV, saveCV, extractCVFromFile, extractCVFromText, downloadCV, isLoading, error, clearError, clearAllCVData } = useCV();
+  const { currentLanguage, changeLanguage, resetLanguage, isRTL, getFieldLabels } = useLanguage();
   const navigate = useNavigate();
 
   // Enhanced hooks for better UX
@@ -30,14 +37,19 @@ export const CVBuilderPage = () => {
   const [isDownloading, setIsDownloading] = useState(false); // Separate download state
   const [lastDownloadTime, setLastDownloadTime] = useState(0); // Prevent rapid clicks
   const [uploadError, setUploadError] = useState('');
-  const [pastedText, setPastedText] = useState('');  const [showSuccess, setShowSuccess] = useState(false);
+  const [pastedText, setPastedText] = useState('');
+  const [showSuccess, setShowSuccess] = useState(false);
   const [manualSaveCompleted, setManualSaveCompleted] = useState(false);
+  const [extractedData, setExtractedData] = useState(null); // Store extracted CV data
+  const [showLanguageSelection, setShowLanguageSelection] = useState(false); // Show language selector after extraction
   
   // Auto-save related state
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const autoSaveTimeoutRef = useRef(null);
-  const lastAutoSaveDataRef = useRef(null);const [formData, setFormData] = useState({
+  const lastAutoSaveDataRef = useRef(null);
+
+  const [formData, setFormData] = useState({
     personalInfo: {
       firstName: '',
       lastName: '',
@@ -51,16 +63,18 @@ export const CVBuilderPage = () => {
     summary: '',
     experience: [],
     education: [],
-    skills: [],
+    skills: {}, // Object format for categorized skills: {"Technical Skills": ["React", "Node.js"], "Soft Skills": ["Leadership"]}
     languages: [],
     certifications: []
   });
   const steps = [
     { id: 0, title: 'Import CV', icon: '📁' },
-    { id: 1, title: 'Personal Info', icon: '👤' },
-    { id: 2, title: 'Experience', icon: '💼' },
-    { id: 3, title: 'Education', icon: '🎓' },    { id: 4, title: 'Skills', icon: '⚡' },
-    { id: 5, title: 'Review & Save', icon: '✅' }
+    { id: 1, title: 'Language', icon: '🌐' },
+    { id: 2, title: 'Personal Info', icon: '👤' },
+    { id: 3, title: 'Experience', icon: '💼' },
+    { id: 4, title: 'Education', icon: '🎓' },
+    { id: 5, title: 'Skills', icon: '⚡' },
+    { id: 6, title: 'Review & Save', icon: '✅' }
   ];  // Debounced auto-save function
   const debouncedAutoSave = useCallback((data) => {
     // Clear existing timeout
@@ -121,7 +135,7 @@ export const CVBuilderPage = () => {
         try {
           const dataToSave = {
             ...formData,
-            skills: categorizeSkillsArray(formData.skills)
+            skills: formData.skills // Keep as object format
           };
           await saveCV(dataToSave);
         } catch (error) {
@@ -134,19 +148,31 @@ export const CVBuilderPage = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [formData, saveCV]);  useEffect(() => {
     if (cvData) {
-      // Ensure no null values in the form data
-      const sanitizedData = sanitizeFormData(cvData);
-      
-      // Normalize skills from object format to array format for UI
-      if (sanitizedData.skills) {
-        sanitizedData.skills = normalizeSkillsForUI(sanitizedData.skills);
+      // Only update form data if we don't have extracted data waiting for language selection
+      // This prevents overriding translated data
+      if (!extractedData && !showLanguageSelection) {
+        // Ensure no null values in the form data
+        const sanitizedData = sanitizeFormData(cvData);
+        
+        // Keep skills in object format for categorized display
+        if (sanitizedData.skills) {
+          // If skills are in array format, convert to object; otherwise keep as-is
+          if (Array.isArray(sanitizedData.skills)) {
+            sanitizedData.skills = categorizeSkillsArray(sanitizedData.skills);
+          }
+        }
+        
+        console.log('📋 Updating form data from context cvData (no extraction in progress)');
+        setFormData(sanitizedData);
       }
       
-      setFormData(sanitizedData);
-      // If CV exists, skip to personal info step
-      setActiveStep(1);
+      // Only auto-advance to step 1 (language selection) from step 0 (import)
+      // Never skip language selection step
+      if (activeStep === 0) {
+        setActiveStep(1);
+      }
     }
-  }, [cvData]);// Helper function to ensure no null/undefined values
+  }, [cvData, activeStep, extractedData, showLanguageSelection]);// Helper function to ensure no null/undefined values
   const sanitizeFormData = (data) => {
     const sanitize = (obj) => {
       if (Array.isArray(obj)) {
@@ -165,7 +191,9 @@ export const CVBuilderPage = () => {
   };
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
-    if (!file) return;    const allowedTypes = [
+    if (!file) return;
+
+    const allowedTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/plain',
@@ -192,8 +220,9 @@ export const CVBuilderPage = () => {
       const result = await extractCVFromFile(file);
       
       if (result.success) {
-        setFormData(result.cv);
-        setActiveStep(1); // Move to personal info step
+        setExtractedData(result.cv);
+        setShowLanguageSelection(true);
+        setActiveStep(1); // Move to language selection step
       } else {
         setUploadError(result.error);
       }
@@ -204,6 +233,7 @@ export const CVBuilderPage = () => {
       setIsProcessing(false);
     }
   };
+
   const handlePasteSubmit = async () => {
     if (!pastedText.trim()) {
       setUploadError('Please paste your CV content');
@@ -218,8 +248,9 @@ export const CVBuilderPage = () => {
       const result = await extractCVFromText(pastedText);
       
       if (result.success) {
-        setFormData(result.cv);
-        setActiveStep(1); // Move to personal info step
+        setExtractedData(result.cv);
+        setShowLanguageSelection(true);
+        setActiveStep(1); // Move to language selection step
       } else {
         setUploadError(result.error);
       }
@@ -228,7 +259,143 @@ export const CVBuilderPage = () => {
     } finally {
       setIsProcessing(false);
     }
-  };  const handleInputChange = (section, field, value, index = null) => {
+  };
+
+  const handleLanguageSelection = async (language) => {
+    console.log('🌐 handleLanguageSelection called with:', { 
+      language, 
+      hasExtractedData: !!extractedData,
+      extractedDataSample: extractedData ? {
+        personalInfo: extractedData.personalInfo,
+        hasExperience: !!extractedData.experience?.length,
+        hasEducation: !!extractedData.education?.length
+      } : null
+    });
+
+    setIsProcessing(true);
+    setUploadError('');
+    
+    try {
+      if (extractedData) {
+        // Check if translation is actually needed
+        const needsTranslation = language !== 'en'; // Only translate if not English
+        
+        let finalData;
+        if (needsTranslation) {
+          // Apply AI-powered language translation to the extracted data
+          console.log('🤖 Starting AI translation for extracted data...');
+          console.log('📝 Extracted data before translation:', extractedData);
+          console.log('🔍 Extracted skills structure:', {
+            skillsType: typeof extractedData.skills,
+            skillsIsArray: Array.isArray(extractedData.skills),
+            skillsKeys: extractedData.skills ? Object.keys(extractedData.skills) : 'null/undefined',
+            skillsValue: extractedData.skills
+          });
+          
+          finalData = await LanguageTransformationService.applyLanguageToExtractedData(
+            extractedData, 
+            language
+          );
+          
+          console.log('🌐 AI translation completed:', {
+            language,
+            hasData: !!finalData,
+            hasTranslationMetadata: !!finalData._translation,
+            wasTranslated: finalData._translation?.translated
+          });
+          console.log('🔍 Translated skills structure:', {
+            skillsType: typeof finalData.skills,
+            skillsIsArray: Array.isArray(finalData.skills),
+            skillsKeys: finalData.skills ? Object.keys(finalData.skills) : 'null/undefined',
+            skillsValue: finalData.skills
+          });
+        } else {
+          // For English, just format without AI translation
+          console.log('🎨 Formatting data for English without AI translation...');
+          console.log('🔍 Pre-format skills structure:', {
+            skillsType: typeof extractedData.skills,
+            skillsIsArray: Array.isArray(extractedData.skills),
+            skillsKeys: extractedData.skills ? Object.keys(extractedData.skills) : 'null/undefined',
+            skillsValue: extractedData.skills
+          });
+          
+          finalData = LanguageTransformationService.formatCVData(extractedData, language);
+          console.log('✅ English formatting completed');
+          console.log('🔍 Post-format skills structure:', {
+            skillsType: typeof finalData.skills,
+            skillsIsArray: Array.isArray(finalData.skills),
+            skillsKeys: finalData.skills ? Object.keys(finalData.skills) : 'null/undefined',
+            skillsValue: finalData.skills
+          });
+        }
+        
+        console.log('📋 Setting form data with processed data');
+        console.log('🔍 Final data preview:', {
+          title: finalData.personalInfo?.title,
+          summary: finalData.summary?.substring(0, 100) + '...',
+          hasTranslation: !!finalData._translation,
+          skillsStructure: {
+            type: typeof finalData.skills,
+            isArray: Array.isArray(finalData.skills),
+            keys: finalData.skills ? Object.keys(finalData.skills) : 'null/undefined'
+          }
+        });
+
+        // Keep skills in object format for categorized display
+        if (Array.isArray(finalData.skills)) {
+          console.log('🔄 Converting skills array to categorized object format');
+          finalData.skills = categorizeSkillsArray(finalData.skills);
+        } else if (!finalData.skills || typeof finalData.skills !== 'object') {
+          console.log('⚠️ Skills not in expected format, initializing as empty object');
+          finalData.skills = {};
+        }
+
+        console.log('✅ Final skills structure:', {
+          type: typeof finalData.skills,
+          isArray: Array.isArray(finalData.skills),
+          keys: finalData.skills ? Object.keys(finalData.skills) : 'null/undefined',
+          categories: finalData.skills ? Object.keys(finalData.skills).length : 0
+        });
+
+        setFormData(finalData);
+        
+        // Verify form data was set correctly
+        setTimeout(() => {
+          console.log('🔍 Form data verification after setFormData:', {
+            title: formData.personalInfo?.title,
+            summary: formData.summary?.substring(0, 50) + '...',
+            skillsStructure: {
+              type: typeof formData.skills,
+              isArray: Array.isArray(formData.skills),
+              keys: formData.skills ? Object.keys(formData.skills) : 'null/undefined',
+              isEmpty: !formData.skills || (Array.isArray(formData.skills) && formData.skills.length === 0) || (typeof formData.skills === 'object' && Object.keys(formData.skills).length === 0)
+            }
+          });
+        }, 100);
+        
+        console.log('🔄 Changing language in context');
+        await changeLanguage(language);
+        
+        setShowLanguageSelection(false);
+        setActiveStep(2); // Move to personal info step
+        
+        console.log('✅ Language selection completed successfully');
+      } else {
+        // If no extracted data, just set language and proceed
+        console.log('⚠️ No extracted data, only changing language');
+        await changeLanguage(language);
+        setShowLanguageSelection(false);
+        setActiveStep(2);
+      }
+    } catch (error) {
+      console.error('❌ Language selection error:', error);
+      setUploadError(`Failed to apply language settings: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleInputChange = (section, field, value, index = null) => {
     setFormData(prev => {
       const updated = { ...prev };
       
@@ -243,10 +410,10 @@ export const CVBuilderPage = () => {
         updated[field] = value;
       }
       
-      // Prepare data for saving (convert skills to categorized format)
+      // Prepare data for saving (skills already in object format)
       const dataToSave = {
         ...updated,
-        skills: categorizeSkillsArray(updated.skills)
+        skills: updated.skills // Keep as object format
       };
       
       // Update CV context immediately for UI consistency
@@ -268,7 +435,7 @@ export const CVBuilderPage = () => {
       // Prepare data for saving and trigger auto-save
       const dataToSave = {
         ...updated,
-        skills: categorizeSkillsArray(updated.skills)
+        skills: updated.skills // Keep as object format
       };
       updateCV(dataToSave);
       debouncedAutoSave(dataToSave);
@@ -287,7 +454,7 @@ export const CVBuilderPage = () => {
       // Prepare data for saving and trigger auto-save
       const dataToSave = {
         ...updated,
-        skills: categorizeSkillsArray(updated.skills)
+        skills: updated.skills // Keep as object format
       };
       updateCV(dataToSave);
       debouncedAutoSave(dataToSave);
@@ -339,10 +506,10 @@ export const CVBuilderPage = () => {
     }
 
     try {
-      // Prepare data for backend - convert skills array back to categorized format
+      // Prepare data for backend (skills already in object format)
       const dataToSave = {
         ...formData,
-        skills: categorizeSkillsArray(formData.skills)
+        skills: formData.skills // Keep as object format
       };
       
       console.log('🔄 Manual save: Saving CV with data:', {
@@ -372,9 +539,9 @@ export const CVBuilderPage = () => {
         setShowSuccess(true);
         setTimeout(() => setShowSuccess(false), 3000);
         
-        // If we're on the review step (step 5), force a re-render to show success state
-        if (activeStep === 5) {
-          setActiveStep(5);
+        // If we're on the review step (step 6), force a re-render to show success state
+        if (activeStep === 6) {
+          setActiveStep(6);
         }
         
         console.log('✅ Manual save: CV saved and context updated');
@@ -404,13 +571,13 @@ export const CVBuilderPage = () => {
     setLastDownloadTime(now);
     setUploadError(''); // Clear any previous errors
       try {
-      console.log('🚀 Starting single PDF download...');      // Prepare data for backend - convert skills array back to categorized format
+      console.log('🚀 Starting single PDF download...');      // Prepare data for backend (skills already in object format)
       const dataToDownload = {
         ...formData,
-        skills: categorizeSkillsArray(formData.skills)
+        skills: formData.skills // Keep as object format
       };
       
-      const result = await downloadCV(dataToDownload, 'my-cv');
+      const result = await downloadCV(dataToDownload, 'my-cv', currentLanguage);
       if (!result.success) {
         setUploadError(result.error || 'Failed to download CV');
       } else {
@@ -530,7 +697,10 @@ export const CVBuilderPage = () => {
 
             <div className="flex justify-center">
               <Button
-                onClick={() => setActiveStep(1)}
+                onClick={() => {
+                  setShowLanguageSelection(true);
+                  setActiveStep(1);
+                }}
                 variant="outline"
               >
                 Skip and Build from Scratch
@@ -541,26 +711,62 @@ export const CVBuilderPage = () => {
 
       case 1:
         return (
-          <div className="space-y-6">            <h2 className="text-2xl font-bold text-gray-900 mb-4">Personal Information</h2>
+          <div className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                Select Language
+              </h2>
+              <p className="text-gray-600 mb-8">
+                Choose the language for your CV content and interface
+              </p>
+            </div>
+
+            <LanguageSelector 
+              onLanguageSelect={handleLanguageSelection}
+              extractedData={extractedData}
+              dataType="cv"
+            />
+
+            {uploadError && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
+                <p className="text-sm text-red-600">{uploadError}</p>
+              </div>
+            )}
+
+            {isProcessing && (
+              <div className="text-center">
+                <LoadingSpinner size="sm" />
+                <p className="text-sm text-gray-600 mt-2">Applying language settings...</p>
+              </div>
+            )}
+          </div>
+        );
+
+      case 2:
+        return (
+          <div className="space-y-6" dir={isRTL() ? 'rtl' : 'ltr'}>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              {getFieldLabels()?.personalInfo || 'Personal Information'}
+            </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
-                label="First Name"
-                value={formData.personalInfo.firstName}
+                label={getFieldLabels()?.firstName || "First Name"}
+                value={formData.personalInfo?.firstName || ''}
                 onChange={(e) => handleInputChange('personalInfo', 'firstName', e.target.value)}
                 required
               />
               <Input
-                label="Last Name"
-                value={formData.personalInfo.lastName}
+                label={getFieldLabels()?.lastName || "Last Name"}
+                value={formData.personalInfo?.lastName || ''}
                 onChange={(e) => handleInputChange('personalInfo', 'lastName', e.target.value)}
                 required
               />
             </div>
             
             <Input
-              label="Professional Title"
-              value={formData.personalInfo.title}
+              label={getFieldLabels()?.title || "Professional Title"}
+              value={formData.personalInfo?.title || ''}
               onChange={(e) => handleInputChange('personalInfo', 'title', e.target.value)}
               placeholder="e.g., Senior Software Engineer, Marketing Manager"
               className="mb-4"
@@ -568,32 +774,32 @@ export const CVBuilderPage = () => {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
-                label="Email"
+                label={getFieldLabels()?.email || "Email"}
                 type="email"
-                value={formData.personalInfo.email}
+                value={formData.personalInfo?.email || ''}
                 onChange={(e) => handleInputChange('personalInfo', 'email', e.target.value)}
                 required
               />
               <Input
-                label="Phone"
-                value={formData.personalInfo.phone}
+                label={getFieldLabels()?.phone || "Phone"}
+                value={formData.personalInfo?.phone || ''}
                 onChange={(e) => handleInputChange('personalInfo', 'phone', e.target.value)}
               />
               <Input
-                label="Location"
-                value={formData.personalInfo.location}
+                label={getFieldLabels()?.location || "Location"}
+                value={formData.personalInfo?.location || ''}
                 onChange={(e) => handleInputChange('personalInfo', 'location', e.target.value)}
               />
               <Input
                 label="LinkedIn"
-                value={formData.personalInfo.linkedin}
+                value={formData.personalInfo?.linkedin || ''}
                 onChange={(e) => handleInputChange('personalInfo', 'linkedin', e.target.value)}
               />
             </div>
             
             <Textarea
-              label="Professional Summary"
-              value={formData.summary}
+              label={getFieldLabels()?.summary || "Professional Summary"}
+              value={formData.summary || ''}
               onChange={(e) => handleInputChange(null, 'summary', e.target.value)}
               placeholder="Brief description of your professional background and goals..."
               rows={4}
@@ -601,11 +807,13 @@ export const CVBuilderPage = () => {
           </div>
         );
 
-      case 2:
+      case 3:
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" dir={isRTL() ? 'rtl' : 'ltr'}>
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-gray-900">Work Experience</h2>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {getFieldLabels()?.experience || 'Work Experience'}
+              </h2>
               <Button
                 onClick={() => addArrayItem('experience')}
                 variant="outline"
@@ -629,27 +837,60 @@ export const CVBuilderPage = () => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
-                    label="Company"
+                    label={getFieldLabels()?.company || "Company"}
                     value={exp.company}
                     onChange={(e) => handleInputChange('experience', 'company', e.target.value, index)}
                   />
                   <Input
-                    label="Position"
+                    label={getFieldLabels()?.position || "Position"}
                     value={exp.position}
                     onChange={(e) => handleInputChange('experience', 'position', e.target.value, index)}
                   />
-                  <Input
-                    label="Start Date"
-                    type="date"
-                    value={exp.startDate}
-                    onChange={(e) => handleInputChange('experience', 'startDate', e.target.value, index)}
-                  />
-                  <Input
-                    label="End Date"
-                    type="date"
-                    value={exp.endDate}
-                    onChange={(e) => handleInputChange('experience', 'endDate', e.target.value, index)}
-                  />
+                  <div className="space-y-2">
+                    <Input
+                      label={getFieldLabels()?.startDate || "Start Date"}
+                      type="date"
+                      value={formatDateForInput(exp.startDate)}
+                      onChange={(e) => {
+                        const formattedDate = e.target.value ? formatDateForStorage(e.target.value) : '';
+                        handleInputChange('experience', 'startDate', formattedDate, index);
+                      }}
+                    />
+                    {isDatePresent(exp.startDate) && (
+                      <div className="text-sm text-gray-500">Original: {exp.startDate}</div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      label={getFieldLabels()?.endDate || "End Date"}
+                      type="date"
+                      value={formatDateForInput(exp.endDate)}
+                      onChange={(e) => {
+                        const formattedDate = e.target.value ? formatDateForStorage(e.target.value) : 'Present';
+                        handleInputChange('experience', 'endDate', formattedDate, index);
+                      }}
+                    />
+                    {isDatePresent(exp.endDate) && (
+                      <div className="text-sm text-green-600 font-medium">
+                        {getFieldLabels()?.currentlyWorking || 'Currently working here'}
+                      </div>
+                    )}
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`current-${index}`}
+                        checked={isDatePresent(exp.endDate)}
+                        onChange={(e) => {
+                          const newEndDate = e.target.checked ? 'Present' : '';
+                          handleInputChange('experience', 'endDate', newEndDate, index);
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <label htmlFor={`current-${index}`} className="text-sm text-gray-700">
+                        {getFieldLabels()?.currentlyWorking || 'Currently working here'}
+                      </label>
+                    </div>
+                  </div>
                 </div>
                 
                 <Textarea
@@ -664,11 +905,13 @@ export const CVBuilderPage = () => {
           </div>
         );
 
-      case 3:
+      case 4:
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" dir={isRTL() ? 'rtl' : 'ltr'}>
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-gray-900">Education</h2>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {getFieldLabels()?.education || 'Education'}
+              </h2>
               <Button
                 onClick={() => addArrayItem('education')}
                 variant="outline"
@@ -692,12 +935,12 @@ export const CVBuilderPage = () => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
-                    label="Institution"
+                    label={getFieldLabels()?.institution || "Institution"}
                     value={edu.institution}
                     onChange={(e) => handleInputChange('education', 'institution', e.target.value, index)}
                   />
                   <Input
-                    label="Degree"
+                    label={getFieldLabels()?.degree || "Degree"}
                     value={edu.degree}
                     onChange={(e) => handleInputChange('education', 'degree', e.target.value, index)}
                   />
@@ -707,50 +950,80 @@ export const CVBuilderPage = () => {
                     onChange={(e) => handleInputChange('education', 'field', e.target.value, index)}
                   />
                   <Input
-                    label="Grade/GPA"
+                    label={getFieldLabels()?.grade || "Grade/GPA"}
                     value={edu.grade}
                     onChange={(e) => handleInputChange('education', 'grade', e.target.value, index)}
                   />
+                  <div className="space-y-2">
+                    <Input
+                      label={getFieldLabels()?.startDate || "Start Date"}
+                      type="date"
+                      value={formatDateForInput(edu.startDate)}
+                      onChange={(e) => {
+                        const formattedDate = e.target.value ? formatDateForStorage(e.target.value) : '';
+                        handleInputChange('education', 'startDate', formattedDate, index);
+                      }}
+                    />
+                    {isDatePresent(edu.startDate) && (
+                      <div className="text-sm text-gray-500">Original: {edu.startDate}</div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      label={getFieldLabels()?.endDate || "End Date"}
+                      type="date"
+                      value={formatDateForInput(edu.endDate)}
+                      onChange={(e) => {
+                        const formattedDate = e.target.value ? formatDateForStorage(e.target.value) : 'Present';
+                        handleInputChange('education', 'endDate', formattedDate, index);
+                      }}
+                    />
+                    {isDatePresent(edu.endDate) && (
+                      <div className="text-sm text-green-600 font-medium">
+                        {getFieldLabels()?.currentlyStudying || 'Currently studying here'}
+                      </div>
+                    )}
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`current-edu-${index}`}
+                        checked={isDatePresent(edu.endDate)}
+                        onChange={(e) => {
+                          const newEndDate = e.target.checked ? 'Present' : '';
+                          handleInputChange('education', 'endDate', newEndDate, index);
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <label htmlFor={`current-edu-${index}`} className="text-sm text-gray-700">
+                        {getFieldLabels()?.currentlyStudying || 'Currently studying here'}
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         );
 
-      case 4:
+      case 5:
         return (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900">Skills & Languages</h2>
+          <div className="space-y-6" dir={isRTL() ? 'rtl' : 'ltr'}>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {getFieldLabels()?.skills || 'Skills & Languages'}
+            </h2>
             
-            {/* Skills Section */}
+            {/* Categorized Skills Section */}
             <div>
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-gray-900">Skills</h3>
-                <Button
-                  onClick={() => addArrayItem('skills')}
-                  variant="outline"
-                  size="sm"
-                >
-                  Add Skill
-                </Button>
-              </div>                <div className="space-y-2">
-                {(Array.isArray(formData.skills) ? formData.skills : []).map((skill, index) => (
-                  <div key={index} className="flex items-center space-x-4">
-                    <Input
-                      placeholder="Skill name"
-                      value={skill.name}
-                      onChange={(e) => handleInputChange('skills', 'name', e.target.value, index)}
-                      className="flex-1"
-                    />
-                    <button
-                      onClick={() => removeArrayItem('skills', index)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <CategorizedSkillsInput
+                skills={formData.skills}
+                onChange={(updatedSkills) => {
+                  console.log('🎯 Skills updated from categorized input:', updatedSkills);
+                  const updated = { ...formData, skills: updatedSkills };
+                  setFormData(updated);
+                  debouncedAutoSave(updated);
+                }}
+                isRTL={isRTL()}
+              />
             </div>
 
             {/* Languages Section */}
@@ -796,9 +1069,11 @@ export const CVBuilderPage = () => {
               </div>
             </div>
           </div>
-        );      case 5:
+        );
+
+      case 6:
         return (
-          <div className="space-y-6">
+          <div className="space-y-6" dir={isRTL() ? 'rtl' : 'ltr'}>
             {/* Show success message only if manual save was completed */}
             {manualSaveCompleted ? (
               <motion.div
@@ -1042,6 +1317,9 @@ export const CVBuilderPage = () => {
                     setActiveStep(0);
                     setShowSuccess(false);
                     setManualSaveCompleted(false);
+                    setExtractedData(null);
+                    setShowLanguageSelection(false);
+                    resetLanguage(); // Reset language selection
                     clearError();
                     
                     console.log('✅ CV Builder: Form reset completed');
@@ -1140,7 +1418,7 @@ export const CVBuilderPage = () => {
         >
           {renderStepContent()}
         </motion.div>        {/* Navigation */}
-        {activeStep < 5 && (
+        {activeStep < 6 && (
           <div className="flex justify-between items-center">
             <Button
               onClick={() => setActiveStep(Math.max(0, activeStep - 1))}
@@ -1172,7 +1450,7 @@ export const CVBuilderPage = () => {
                 <Button
                   onClick={() => {
                     // Move to review step without forcing save
-                    setActiveStep(5);
+                    setActiveStep(6);
                   }}
                   variant="primary"
                 >
@@ -1191,10 +1469,10 @@ export const CVBuilderPage = () => {
         )}
 
         {/* Success Step Navigation */}
-        {activeStep === 5 && (
+        {activeStep === 6 && (
           <div className="text-center">
             <Button
-              onClick={() => setActiveStep(4)}
+              onClick={() => setActiveStep(5)}
               variant="outline"
               className="mr-4"
             >
@@ -1208,6 +1486,9 @@ export const CVBuilderPage = () => {
           </div>
         )}
       </div>
+      
+      {/* AI Quota Status Widget */}
+      <QuotaStatusWidget />
     </div>
   );
 };

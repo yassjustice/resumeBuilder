@@ -190,29 +190,32 @@ class EnhancedFallbackParser {
     return /^[A-Z]/.test(name);
   }
 
-  extractLocationAdvanced(text, sentences) {
-    // Enhanced location extraction
-    const patterns = [
-      /location[:\s]+([^\n]+)/gi,
-      /(?:based in|located in)[:\s]+([^\n]+)/gi,
-      /(?:remote|onsite|hybrid|office)[:\s]*(?:in\s+)?([^\n]+)/gi,
-      /([A-Z][a-z]+,\s*[A-Z]{2,3})/g, // City, State format
-      /([A-Z][a-z\s]+,\s*[A-Z][a-z\s]+)/g // City, Country format
+  extractLocation(text) {
+    console.log('🔧 Extracting location from text...');
+    
+    // Enhanced location patterns
+    const locationPatterns = [
+      /(?:location|address|résidence|domicile)[:\s]+([^\n\r]{3,50})/gi,
+      /(?:based in|living in|from)[:\s]+([^\n\r]{3,50})/gi,
+      /([A-Z][a-z]+,\s*[A-Z][a-z]+)/g, // City, Country
+      /([A-Z][a-z]+,\s*[A-Z]{2,3})/g // City, State/Code
     ];
     
-    for (const pattern of patterns) {
-      const matches = [...text.matchAll(pattern)]; // Convert to array
+    for (const pattern of locationPatterns) {
+      const matches = [...text.matchAll(pattern)];
       for (const match of matches) {
         if (match[1]) {
           const location = match[1].trim();
           if (this.isValidLocation(location)) {
+            console.log('✅ Location extracted:', location);
             return location;
           }
         }
       }
     }
     
-    return 'Location Not Specified';
+    console.log('⚠️ No valid location found');
+    return '';
   }
 
   isValidLocation(location) {
@@ -322,44 +325,139 @@ class EnhancedFallbackParser {
   // For brevity, I'll implement the core ones and the rest follow similar patterns
 
   extractPersonalInfoAdvanced(text, lines) {
+    console.log('🔧 Extracting personal info from text...');
+    const nameInfo = this.extractFullName(text, lines);
+    
     return {
-      firstName: this.extractFirstName(text, lines),
-      lastName: this.extractLastName(text, lines),
+      firstName: nameInfo.firstName,
+      lastName: nameInfo.lastName,
+      title: this.extractJobTitle(text, lines),
       email: this.extractEmail(text),
       phone: this.extractPhone(text),
-      location: this.extractLocationAdvanced(text, this.splitIntoSentences(text)),
+      location: this.extractLocation(text),
       linkedin: this.extractLinkedIn(text),
       website: this.extractWebsite(text)
     };
   }
 
-  extractFirstName(text, lines) {
-    // Look for name in first few lines
-    const namePatterns = [
-      /^([A-Z][a-z]+)\s+[A-Z][a-z]+/m,
-      /name[:\s]+([A-Z][a-z]+)/i
+  extractFullName(text, lines) {
+    console.log('🔧 Extracting name from CV text...');
+    
+    // Try multiple approaches to find the name
+    const approaches = [
+      () => this.extractNameFromFirstLine(lines),
+      () => this.extractNameFromContactSection(text),
+      () => this.extractNameFromHeader(text),
+      () => this.extractNameFromPatterns(text)
     ];
     
-    for (const pattern of namePatterns) {
-      const match = text.match(pattern);
-      if (match && match[1]) {
-        return match[1];
+    for (const approach of approaches) {
+      const result = approach();
+      if (result.firstName || result.lastName) {
+        console.log('✅ Name extracted:', result);
+        return result;
       }
     }
     
-    return '';
+    console.log('⚠️ No name found, using defaults');
+    return { firstName: '', lastName: '' };
   }
 
-  extractLastName(text, lines) {
-    const namePatterns = [
-      /^[A-Z][a-z]+\s+([A-Z][a-z]+)/m,
-      /name[:\s]+[A-Z][a-z]+\s+([A-Z][a-z]+)/i
+  extractNameFromFirstLine(lines) {
+    if (!lines || lines.length === 0) return { firstName: '', lastName: '' };
+    
+    const firstLine = lines[0].trim();
+    console.log('🔍 Checking first line for name:', firstLine);
+    
+    // Skip if it looks like a header/title
+    if (firstLine.toLowerCase().includes('curriculum') || 
+        firstLine.toLowerCase().includes('resume') ||
+        firstLine.toLowerCase().includes('cv') ||
+        firstLine.length > 50) {
+      return { firstName: '', lastName: '' };
+    }
+    
+    // Look for name pattern: FirstName LastName
+    const nameMatch = firstLine.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]*)?)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]*)?)$/);
+    if (nameMatch) {
+      return {
+        firstName: nameMatch[1].trim(),
+        lastName: nameMatch[2].trim()
+      };
+    }
+    
+    return { firstName: '', lastName: '' };
+  }
+
+  extractNameFromContactSection(text) {
+    const contactPatterns = [
+      /(?:name|nom)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]*)?)\s+([A-Z][a-z]+)/i,
+      /^([A-Z][a-z]+(?:\s+[A-Z][a-z]*)?)\s+([A-Z][a-z]+)$/m
     ];
     
-    for (const pattern of namePatterns) {
+    for (const pattern of contactPatterns) {
+      const match = text.match(pattern);
+      if (match && match[1] && match[2]) {
+        return {
+          firstName: match[1].trim(),
+          lastName: match[2].trim()
+        };
+      }
+    }
+    
+    return { firstName: '', lastName: '' };
+  }
+
+  extractNameFromHeader(text) {
+    // Look in the first 200 characters for a name
+    const header = text.substring(0, 200);
+    const lines = header.split('\n').filter(line => line.trim());
+    
+    for (const line of lines.slice(0, 3)) {
+      const cleanLine = line.trim();
+      if (cleanLine.length > 5 && cleanLine.length < 40) {
+        const nameMatch = cleanLine.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]*)?)\s+([A-Z][a-z]+)$/);
+        if (nameMatch) {
+          return {
+            firstName: nameMatch[1].trim(),
+            lastName: nameMatch[2].trim()
+          };
+        }
+      }
+    }
+    
+    return { firstName: '', lastName: '' };
+  }
+
+  extractNameFromPatterns(text) {
+    // Last resort: look for any name-like pattern
+    const namePattern = /\b([A-Z][a-z]{2,})\s+([A-Z][a-z]{2,})\b/;
+    const match = text.match(namePattern);
+    
+    if (match) {
+      return {
+        firstName: match[1],
+        lastName: match[2]
+      };
+    }
+    
+    return { firstName: '', lastName: '' };
+  }
+
+  extractJobTitle(text, lines) {
+    // Look for job title patterns
+    const titlePatterns = [
+      /(?:title|position|role)[:\s]+([^\n\r]+)/i,
+      /^([A-Z][a-z\s]+(?:Engineer|Developer|Manager|Analyst|Designer|Architect|Consultant|Specialist|Director|Lead|Senior|Junior))/im
+    ];
+    
+    for (const pattern of titlePatterns) {
       const match = text.match(pattern);
       if (match && match[1]) {
-        return match[1];
+        const title = match[1].trim();
+        if (title.length < 100 && !title.includes('@')) {
+          return title;
+        }
       }
     }
     
@@ -367,24 +465,69 @@ class EnhancedFallbackParser {
   }
 
   extractEmail(text) {
-    const emailPattern = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/;
-    const match = text.match(emailPattern);
-    return match ? match[0] : '';
-  }
-
-  extractPhone(text) {
-    const phonePatterns = [
-      /\+?[\d\s\-\(\)]{10,}/g,
-      /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g
-    ];
+    console.log('🔧 Extracting email from text...');
     
-    for (const pattern of phonePatterns) {
-      const match = text.match(pattern);
-      if (match) {
-        return match[0].trim();
+    // More precise email pattern
+    const emailPattern = /\b[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}\b/g;
+    const matches = text.match(emailPattern);
+    
+    if (matches && matches.length > 0) {
+      // Return the first valid email found
+      for (const email of matches) {
+        // Validate email format more strictly
+        if (this.isValidEmail(email)) {
+          console.log('✅ Email extracted:', email);
+          return email;
+        }
       }
     }
     
+    console.log('⚠️ No valid email found');
+    return '';
+  }
+
+  isValidEmail(email) {
+    // Additional validation for email
+    if (!email || email.length < 5 || email.length > 100) return false;
+    if (!email.includes('@') || !email.includes('.')) return false;
+    if (email.startsWith('.') || email.endsWith('.')) return false;
+    if (email.includes('..')) return false; // No consecutive dots
+    
+    const parts = email.split('@');
+    if (parts.length !== 2) return false;
+    
+    const [local, domain] = parts;
+    if (local.length === 0 || domain.length === 0) return false;
+    if (domain.split('.').length < 2) return false;
+    
+    return true;
+  }
+
+  extractPhone(text) {
+    console.log('🔧 Extracting phone from text...');
+    
+    // Enhanced phone patterns for international formats
+    const phonePatterns = [
+      /\+\d{1,4}[\s\-]?\d{2,3}[\s\-]?\d{2,3}[\s\-]?\d{2,4}[\s\-]?\d{2,4}/g, // International format
+      /\(\d{3}\)[\s\-]?\d{3}[\s\-]?\d{4}/g, // (123) 456-7890
+      /\d{3}[\s\-]?\d{3}[\s\-]?\d{4}/g, // 123-456-7890 or 123 456 7890
+      /\+?\d{10,15}/g // Simple digit sequence
+    ];
+    
+    for (const pattern of phonePatterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        for (const match of matches) {
+          const cleanPhone = match.replace(/[^\d+]/g, '');
+          if (cleanPhone.length >= 10 && cleanPhone.length <= 15) {
+            console.log('✅ Phone extracted:', match.trim());
+            return match.trim();
+          }
+        }
+      }
+    }
+    
+    console.log('⚠️ No valid phone found');
     return '';
   }
 

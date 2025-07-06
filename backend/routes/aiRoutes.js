@@ -3,18 +3,20 @@
  * Handles AI-powered CV processing, file uploads, and cover letter generation
  */
 const express = require('express');
-const AIService = require('../services/ai/aiService');
+
+// Import shared services for proper quota tracking
+const { 
+  aiService, 
+  cvProcessingService, 
+  coverLetterService 
+} = require('../services/sharedAIServices');
+
 const FileProcessingService = require('../services/ai/fileProcessingService');
-const CVProcessingService = require('../services/ai/cvProcessingService');
-const CoverLetterService = require('../services/ai/coverLetterService');
 
 const router = express.Router();
 
-// Initialize services
-const aiService = new AIService();
+// Initialize only services not in shared module
 const fileProcessingService = new FileProcessingService();
-const cvProcessingService = new CVProcessingService();
-const coverLetterService = new CoverLetterService();
 
 /**
  * @route   GET /api/ai/test
@@ -136,13 +138,13 @@ router.post('/extract-job-offer', async (req, res) => {
  */
 router.post('/tailor-cv', async (req, res) => {
   try {
-    const { cv, jobOffer, additionalRequirements } = req.body;
+    const { cv, jobOffer, additionalRequirements, language } = req.body;
     
     // Use the new advanced tailoring service
     const CVTailoringService = require('../services/ai/cvTailoringService');
     const tailoringService = new CVTailoringService();
     
-    const tailoredCV = await tailoringService.tailorCV(cv, jobOffer, additionalRequirements);
+    const tailoredCV = await tailoringService.tailorCV(cv, jobOffer, additionalRequirements, language || 'en');
     
     res.json({
       success: true,
@@ -167,9 +169,9 @@ router.post('/tailor-cv', async (req, res) => {
  */
 router.post('/generate-cover-letter', async (req, res) => {
   try {
-    const { cv, jobOffer, additionalRequirements } = req.body;
+    const { cv, jobOffer, additionalRequirements, language } = req.body;
     
-    const result = await coverLetterService.generateCoverLetter(cv, jobOffer, additionalRequirements);
+    const result = await coverLetterService.generateCoverLetter(cv, jobOffer, additionalRequirements, language || 'en');
     
     res.json({
       success: true,
@@ -232,6 +234,196 @@ router.post('/download/cover-letter', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to generate cover letter PDF',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route   GET /api/ai/quota-status
+ * @desc    Get current AI service quota status
+ * @access  Public
+ */
+router.get('/quota-status', async (req, res) => {
+  try {
+    console.log('📊 Checking AI service quota status...');
+    
+    // Get the AI service manager from any of our services
+    const serviceManager = aiService.serviceManager || aiService.aiServiceManager;
+    
+    if (!serviceManager) {
+      return res.status(500).json({
+        success: false,
+        message: 'AI service manager not available'
+      });
+    }
+
+    const status = serviceManager.getServiceStatus();
+    
+    console.log('🔍 Raw service status data:', JSON.stringify(status, null, 2));
+    
+    // Calculate total usage with proper null checking
+    const totalRequestsToday = status.reduce((sum, service) => sum + (service.dailyRequestCount || 0), 0);
+    const totalDailyCapacity = status.reduce((sum, service) => sum + (service.maxRequestsPerDay || 0), 0);
+    const usagePercentage = totalDailyCapacity > 0 ? Math.round((totalRequestsToday / totalDailyCapacity) * 100) : 0;
+    
+    res.json({
+      success: true,
+      message: 'AI service quota status retrieved',
+      data: {
+        services: status,
+        summary: {
+          totalServices: status.length,
+          activeServices: status.filter(s => !s.isQuotaExceeded).length,
+          exhaustedServices: status.filter(s => s.isQuotaExceeded).length,
+          totalRequestsToday,
+          totalDailyCapacity,
+          usagePercentage: `${usagePercentage}%`,
+          currentService: status.find(s => s.isCurrent)?.displayName || 'None'
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to get quota status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get quota status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/ai/reset-quota
+ * @desc    Reset AI service quota status (for debugging)
+ * @access  Public
+ */
+router.post('/reset-quota', async (req, res) => {
+  try {
+    console.log('🔄 Resetting AI service quota status...');
+    
+    // Get the AI service manager from any of our services
+    const serviceManager = aiService.serviceManager || aiService.aiServiceManager;
+    
+    if (!serviceManager) {
+      return res.status(500).json({
+        success: false,
+        message: 'AI service manager not available'
+      });
+    }
+
+    serviceManager.resetAllQuotaStatus();
+    
+    res.json({
+      success: true,
+      message: 'AI service quota status reset successfully',
+      data: {
+        resetTime: new Date().toISOString(),
+        servicesReset: serviceManager.services.length
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to reset quota status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset quota status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/ai/test-keys
+ * @desc    Test all API keys to see which ones are working
+ * @access  Public
+ */
+router.post('/test-keys', async (req, res) => {
+  try {
+    console.log('🔧 Testing all API keys...');
+    
+    const serviceManager = aiService.serviceManager || aiService.aiServiceManager;
+    
+    if (!serviceManager) {
+      return res.status(500).json({
+        success: false,
+        message: 'AI service manager not available'
+      });
+    }
+
+    const results = [];
+    
+    // Test each service with a simple request
+    for (let i = 0; i < serviceManager.services.length; i++) {
+      const service = serviceManager.services[i];
+      console.log(`🧪 Testing ${service.displayName}...`);
+      
+      try {
+        // Make a minimal test request to conserve quota
+        const testResult = await serviceManager.generateContent(
+          'Hi', // Shortest possible prompt
+          { 
+            modelName: service.modelName, 
+            temperature: 0,
+            maxOutputTokens: 1 // Minimum possible output to save quota
+          },
+          false // isGeneration = false
+        );
+        
+        results.push({
+          service: service.displayName,
+          keyIndex: i + 1,
+          status: 'working',
+          response: testResult.content?.substring(0, 50) || 'No response',
+          dailyCount: service.dailyRequestCount,
+          dailyLimit: service.maxRequestsPerDay,
+          isQuotaExceeded: service.isQuotaExceeded
+        });
+        
+        console.log(`✅ ${service.displayName} is working`);
+        
+      } catch (error) {
+        results.push({
+          service: service.displayName,
+          keyIndex: i + 1,
+          status: 'failed',
+          error: error.message,
+          dailyCount: service.dailyRequestCount,
+          dailyLimit: service.maxRequestsPerDay,
+          isQuotaExceeded: service.isQuotaExceeded,
+          is429: error.message.includes('429') || error.status === 429
+        });
+        
+        console.log(`❌ ${service.displayName} failed: ${error.message}`);
+      }
+      
+      // Wait 0.5 seconds between tests to avoid hitting rate limits
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    const workingKeys = results.filter(r => r.status === 'working').length;
+    const failedKeys = results.filter(r => r.status === 'failed').length;
+    const quotaExceededKeys = results.filter(r => r.is429).length;
+    
+    console.log(`🏁 API Key Test Results: ${workingKeys} working, ${failedKeys} failed, ${quotaExceededKeys} quota exceeded`);
+    
+    res.json({
+      success: true,
+      summary: {
+        total: results.length,
+        working: workingKeys,
+        failed: failedKeys,
+        quotaExceeded: quotaExceededKeys
+      },
+      results
+    });
+
+  } catch (error) {
+    console.error('❌ API key test error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to test API keys',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

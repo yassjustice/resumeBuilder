@@ -1,14 +1,15 @@
 /**
  * AI Service - Core Gemini AI functionality
  * Now uses AIServiceManager for multi-tier fallback
+ * NO FALLBACK PARSER - AI ONLY
  */
 const AIServiceManager = require('./aiServiceManager');
-const EnhancedFallbackParser = require('./enhancedFallbackParser');
 
 class AIService {
   constructor() {
-    this.serviceManager = new AIServiceManager();
-    this.fallbackParser = new EnhancedFallbackParser();
+    // Use singleton instance to ensure quota tracking across all services
+    this.serviceManager = AIServiceManager.getInstance();
+    console.log('🔗 AIService connected to shared AIServiceManager instance');
   }
 
   /**
@@ -125,69 +126,45 @@ Return the extracted text in a clean, readable format while preserving the struc
   async generateContent(prompt, isGeneration = false) {
     try {
       const result = await this.serviceManager.generateContent(prompt, isGeneration);
-      
-      if (result.content === null) {
-        // This means we need to use fallback parser (only for extractions)
-        if (isGeneration) {
-          throw new Error('All AI services failed and fallback is not available for generation tasks');
-        }
-        
-        console.log(`📊 Using ${result.serviceUsed} for content extraction`);
-        return result; // Return the result object with serviceUsed info
-      }
-      
       console.log(`📊 Content generated using ${result.serviceUsed}`);
       return result.content;
       
     } catch (error) {
-      if (isGeneration) {
-        throw error; // Re-throw for generation tasks
-      }
-      
-      // For extraction tasks, return fallback indicator
-      console.log('🔄 All AI services failed, returning fallback indicator');
-      return { content: null, serviceUsed: 'Systematic Fallback Parser' };
+      console.error('❌ AI content generation failed:', error.message);
+      throw error;
     }
   }
 
   /**
-   * Generate content specifically for extraction tasks with fallback
+   * Generate content specifically for extraction tasks (AI-only, no fallback)
    * @param {string} prompt - The prompt to send to AI
-   * @param {string} text - Original text for fallback parsing
-   * @param {string} extractionType - Type of extraction ('cv' or 'jobOffer')
-   * @returns {Promise<Object>} - Structured extraction result
+   * @param {string} text - Original text for extraction
+   * @param {string} extractionType - Type of extraction (cv, jobOffer)
+   * @returns {Promise<Object>} - Extracted data with service info
    */
   async generateContentWithFallback(prompt, text, extractionType) {
-    const result = await this.generateContent(prompt, false);
+    console.log('🤖 Starting AI-only extraction (no fallback parser)');
     
-    if (typeof result === 'object' && result.content === null) {
-      // Use fallback parser
-      if (extractionType === 'jobOffer') {
-        const data = this.fallbackParser.extractJobOffer(text);
-        return { data, serviceUsed: result.serviceUsed };
-      } else if (extractionType === 'cv') {
-        const data = this.fallbackParser.extractCVData(text);
-        return { data, serviceUsed: result.serviceUsed };
-      } else {
-        throw new Error(`Unknown extraction type: ${extractionType}`);
-      }
-    }
-    
-    // AI succeeded, parse the response
     try {
+      const result = await this.generateContent(prompt, false);
+      
+      // AI succeeded, parse the response
       const data = this.parseAIResponse(result);
+      console.log('✅ AI extraction and parsing successful');
       return { data, serviceUsed: 'AI Service' };
-    } catch (parseError) {
-      console.log('⚠️ AI response parsing failed, using fallback parser');
-      if (extractionType === 'jobOffer') {
-        const data = this.fallbackParser.extractJobOffer(text);
-        return { data, serviceUsed: 'Systematic Fallback Parser (Parse Error)' };
-      } else if (extractionType === 'cv') {
-        const data = this.fallbackParser.extractCVData(text);
-        return { data, serviceUsed: 'Systematic Fallback Parser (Parse Error)' };
+      
+    } catch (error) {
+      console.error('❌ AI extraction failed:', error.message);
+      
+      // No fallback - throw the error
+      if (error.message.includes('quota') || error.message.includes('429')) {
+        throw new Error('AI quota exceeded. Please try again later or upgrade your plan.');
+      } else {
+        throw new Error(`AI extraction failed: ${error.message}`);
       }
     }
   }
+
   /**
    * Parse JSON response from AI with robust fallback handling
    * @param {string} jsonText - Raw AI response

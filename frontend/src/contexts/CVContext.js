@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import { api } from '../services/api';
 import { categorizeSkillsArray, normalizeSkillsForUI } from '../utils/skillsCategorization';
+import { getTextDirection, isRTLLanguage } from '../utils/uiDirection';
 
 const CVContext = createContext();
 
@@ -615,11 +616,16 @@ export const CVProvider = ({ children }) => {
   const clearGeneratedContent = useCallback(() => {
     dispatch({ type: 'CLEAR_GENERATED_CONTENT' });
   }, []);  // Download CV using proper API call (no form submission to avoid corruption)
-  const downloadCV = async (cvData, filename = 'cv') => {
+  const downloadCV = async (cvData, filename = 'cv', language = 'en') => {
     try {
-      console.log('📤 CVContext: Starting PDF download...', cvData);      // Transform frontend CV format to backend format
+      console.log('📤 CVContext: Starting PDF download...', cvData);
+      console.log('🌐 CVContext: Using language:', language);      // Transform frontend CV format to backend format
       const backendFormatCV = transformCVForBackend(cvData);
-      console.log('🔄 CVContext: Backend format CV ready');
+      
+      // Add language information for proper PDF translations
+      backendFormatCV.language = language;
+      
+      console.log('🔄 CVContext: Backend format CV ready with language:', language);
       console.log('📋 CVContext: Sending CV data:', JSON.stringify(backendFormatCV, null, 2));
       
       // Validate required fields

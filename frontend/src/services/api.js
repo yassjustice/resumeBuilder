@@ -215,23 +215,25 @@ export const aiApi = {
   },
   
   // Generate tailored CV
-  generateTailoredCV: async ({ cv, jobOffer, additionalRequirements }) => {
+  generateTailoredCV: async ({ cv, jobOffer, additionalRequirements, language = 'en' }) => {
     console.log('🎯 API: Sending tailored CV generation request');
     const response = await apiClient.post('/ai/tailor-cv', {
       cv,
       jobOffer,
-      additionalRequirements
+      additionalRequirements,
+      language
     });
     console.log('📦 API: Tailored CV response:', response);
     return response; // Return the full response from interceptor
   },
     // Generate cover letter
-  generateCoverLetter: async ({ cv, jobOffer, additionalRequirements }) => {
+  generateCoverLetter: async ({ cv, jobOffer, additionalRequirements, language = 'en' }) => {
     console.log('📝 API: Sending cover letter generation request');
     const response = await apiClient.post('/ai/generate-cover-letter', {
       cv,
       jobOffer,
-      additionalRequirements
+      additionalRequirements,
+      language
     });
     console.log('📦 API: Cover letter response:', response);
     return response; // Return the full response from interceptor
@@ -373,4 +375,27 @@ export const api = {
       throw error;
     }
   },
+
+  // Translation methods
+  translateCV: async (cvData, targetLanguage, sourceLanguage) => {
+    return await apiClient.post('/translation/translate-cv', {
+      cvData,
+      targetLanguage,
+      sourceLanguage
+    });
+  },
+  
+  detectLanguage: async (cvData) => {
+    return await apiClient.post('/translation/detect-language', {
+      cvData
+    });
+  },
+  
+  getSupportedLanguages: async () => {
+    return await apiClient.get('/translation/supported-languages');
+  },
+  
+  testTranslation: async () => {
+    return await apiClient.post('/translation/test');
+  }
 };

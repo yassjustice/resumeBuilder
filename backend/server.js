@@ -21,6 +21,8 @@ const cvRoutes = require('./routes/cvRoutes');
 const themeRoutes = require('./routes/themeRoutes');
 const authRoutes = require('./routes/authRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const languageRoutes = require('./routes/languageRoutes');
+const translationRoutes = require('./routes/translationRoutes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -156,6 +158,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/cvs', cvRoutes);
 app.use('/api/themes', themeRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/language', languageRoutes);
+app.use('/api/translation', translationRoutes);
 
 // Error tracking middleware
 app.use(errorTracker);

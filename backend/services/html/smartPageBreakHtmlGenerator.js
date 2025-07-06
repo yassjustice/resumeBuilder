@@ -4,7 +4,7 @@
  */
 
 const { PROFESSIONAL_THEME } = require('../themes/professionalTheme');
-const { getTranslation } = require('../pdf/pdfTranslations');
+const { getTranslation, translateSkillCategory } = require('../pdf/pdfTranslations');
 
 // Global translation helper to be used in all functions when t is not provided
 const createTranslationHelper = (cvData) => {
@@ -483,7 +483,7 @@ function generateSkills(cvData, t) {
       return '';
     }
     
-    const categoryTitle = category.charAt(0).toUpperCase() + category.slice(1);
+    const categoryTitle = translateSkillCategory(category, cvData.language || 'en');
     
     // Safely handle skills data in different formats
     let skillsList = '';

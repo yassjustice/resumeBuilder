@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './contexts/AuthContext';  
 import { CVProvider } from './contexts/CVContext';
 import { TailoredCVProvider } from './contexts/TailoredCVContext';
+import { LanguageProvider } from './contexts/LanguageContext';
 import Layout from './components/Layout/Layout';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
 
@@ -23,9 +24,11 @@ function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <AuthProvider>
-          <CVProvider>            <TailoredCVProvider>
-              <Router>
+        <LanguageProvider>
+          <AuthProvider>
+            <CVProvider>            
+              <TailoredCVProvider>
+                <Router>
                 <Routes>
                   <Route path="/" element={<Layout />}>
                     <Route index element={<HomePage />} />
@@ -69,6 +72,7 @@ function App() {
             </TailoredCVProvider>
           </CVProvider>
         </AuthProvider>
+        </LanguageProvider>
       </ToastProvider>
     </ErrorBoundary>
   );

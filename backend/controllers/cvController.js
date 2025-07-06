@@ -931,9 +931,17 @@ const generatePDFFromData = async (req, res, next) => {
       const cvData = req.body.cvData || req.body;
     const options = req.body.options || {};
     
+    // Ensure language is set for proper PDF translations
+    // Check for language in metadata (for tailored CVs) or use default
+    const language = cvData.metadata?.language || cvData.language || 'en';
+    cvData.language = language;
+    
     console.log('📋 Extracted cvData type:', typeof cvData);
     console.log('📋 Extracted cvData keys:', Object.keys(cvData || {}));
     console.log('📋 cvData.personalInfo:', cvData?.personalInfo);
+    console.log('🌐 cvData.language:', cvData?.language);
+    console.log('🌐 metadata.language:', cvData?.metadata?.language);
+    console.log('📊 Is tailored CV:', !!cvData?.metadata?.tailored);
     
     if (!cvData) {
       console.log('❌ No CV data provided');

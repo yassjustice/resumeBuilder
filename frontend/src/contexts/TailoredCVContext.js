@@ -132,7 +132,7 @@ export const TailoredCVProvider = ({ children }) => {
   }, []);
 
   // Generate tailored CV based on original CV and job offer
-  const generateTailoredCV = useCallback(async (originalCV, jobOffer, additionalRequirements = '') => {
+  const generateTailoredCV = useCallback(async (originalCV, jobOffer, additionalRequirements = '', language = null) => {
     try {
       dispatch({ type: 'SET_AI_PROCESSING', payload: true });
       setLoading(true);
@@ -142,14 +142,16 @@ export const TailoredCVProvider = ({ children }) => {
       console.log('📊 TailoredCV: Input data:', {
         hasOriginalCV: !!originalCV,
         hasJobOffer: !!jobOffer,
-        hasAdditionalRequirements: !!additionalRequirements
+        hasAdditionalRequirements: !!additionalRequirements,
+        language: language
       });
 
       // Call the new advanced tailoring API
       const response = await api.generateTailoredCV({
         cv: originalCV,
         jobOffer: jobOffer,
-        additionalRequirements: additionalRequirements
+        additionalRequirements: additionalRequirements,
+        language: language
       });
 
       console.log('📦 TailoredCV: API response:', response);
@@ -189,16 +191,18 @@ export const TailoredCVProvider = ({ children }) => {
   }, []);
 
   // Generate cover letter
-  const generateCoverLetter = useCallback(async (originalCV, jobOffer, additionalRequirements = '') => {
+  const generateCoverLetter = useCallback(async (originalCV, jobOffer, additionalRequirements = '', language = null) => {
     try {
       dispatch({ type: 'SET_AI_PROCESSING', payload: true });
       setLoading(true);
       clearError();
       
-      console.log('📝 TailoredCV: Generating cover letter...');      const response = await api.generateCoverLetter({
+      console.log('📝 TailoredCV: Generating cover letter...');
+      const response = await api.generateCoverLetter({
         cv: originalCV,
         jobOffer: jobOffer,
-        additionalRequirements: additionalRequirements
+        additionalRequirements: additionalRequirements,
+        language: language
       });
 
       console.log('📦 TailoredCV: Cover letter API response:', response);

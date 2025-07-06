@@ -3,43 +3,62 @@
  * Uses AI to generate personalized cover letters and converts to PDF
  */
 const AIService = require('./aiService');
+const TranslationService = require('./translationService');
+const { formatDateForInput, formatDateForStorage, isDatePresent } = require('../../utils/dateUtils');
 
 class CoverLetterService {
   constructor() {
     this.aiService = new AIService();
+    this.translationService = new TranslationService();
   }
 
   /**
-   * Generate cover letter using AI
+   * Generate cover letter using AI with advanced normalization and translation
    * @param {Object} cv - CV data
    * @param {Object} jobOffer - Job offer data
    * @param {string} additionalRequirements - Optional additional requirements
+   * @param {string} language - Target language for cover letter
    * @returns {Promise<Object>} - Generated cover letter with metadata
    */
-  async generateCoverLetter(cv, jobOffer, additionalRequirements = '') {
+  async generateCoverLetter(cv, jobOffer, additionalRequirements = '', language = 'en') {
     if (!cv || !jobOffer) {
       throw new Error('CV and job offer data required');
     }
 
+    // Normalize CV structure for consistency
+    const normalizedCV = this.normalizeCV(cv);
+
     console.log('🔄 Generating cover letter with multi-tier validation...');
-    const prompt = this.buildCoverLetterPrompt(cv, jobOffer, additionalRequirements);
-    
+    const prompt = this.buildCoverLetterPrompt(normalizedCV, jobOffer, additionalRequirements, language);
     try {
       // Use multi-tier AI system (generation task - no fallback parser)
-      const rawContent = await this.aiService.generateContent(prompt, true);
+      let rawContent = await this.aiService.generateContent(prompt, true);
+      if (rawContent && rawContent.content) rawContent = rawContent.content;
       console.log('📄 Raw cover letter generated, applying validation...');
-      
+
       // Apply AI slop validation and cleaning
-      const cleanedContent = this.validateAndCleanContent(rawContent);
-      
+      let cleanedContent = this.validateAndCleanContent(rawContent);
+
       // Final human-like validation
-      const finalContent = this.applyHumanLikeValidation(cleanedContent, cv, jobOffer);
-      
+      let finalContent = this.applyHumanLikeValidation(cleanedContent, normalizedCV, jobOffer);
+
+      // Translate cover letter if needed
+      if (language && language !== 'en') {
+        try {
+          finalContent = await this.translationService.translateCVContent({ content: finalContent }, language);
+          finalContent = finalContent.content || finalContent;
+          console.log('🌐 Cover letter translated to', language);
+        } catch (translationError) {
+          console.warn('⚠️ Cover letter translation failed, using original:', translationError.message);
+        }
+      }
+
       console.log('✅ Cover letter generated and validated successfully');
       return {
         content: finalContent,
         createdAt: new Date().toISOString(),
-        validationApplied: true
+        validationApplied: true,
+        language: language || 'en'
       };
     } catch (error) {
       console.error('❌ Cover letter generation failed:', error);
@@ -48,94 +67,94 @@ class CoverLetterService {
   }
 
   /**
+   * Normalize CV structure for cover letter generation
+   */
+  normalizeCV(cv) {
+    return {
+      ...cv,
+      personalInfo: cv.personalInfo || {},
+      experience: cv.experience || [],
+      education: cv.education || [],
+      skills: cv.skills || {},
+      certifications: cv.certifications || [],
+      languages: cv.languages || []
+    };
+  }
+
+  /**
    * Build the cover letter generation prompt
    * @param {Object} cv - CV data
    * @param {Object} jobOffer - Job offer data
    * @param {string} additionalRequirements - Additional requirements
+   * @param {string} language - Target language
    * @returns {string} - Complete prompt
    */
-  buildCoverLetterPrompt(cv, jobOffer, additionalRequirements) {
-    return `
-You are an expert career consultant and professional writer. Create a compelling, personalized cover letter that fits on ONE PAGE ONLY. Write it as if you ARE the candidate - use first person throughout.
+  buildCoverLetterPrompt(cv, jobOffer, additionalRequirements, language) {
+    const languageInstruction = language && language !== 'en' 
+      ? `🌐 LANGUAGE REQUIREMENT - CRITICAL:
+- Write the ENTIRE cover letter in ${language === 'fr' ? 'French' : language === 'ar' ? 'Arabic' : language === 'es' ? 'Spanish' : language}
+- Use proper ${language === 'fr' ? 'French' : language === 'ar' ? 'Arabic' : language === 'es' ? 'Spanish' : language} grammar, vocabulary, and cultural context
+- Adapt the writing style to ${language === 'fr' ? 'French' : language === 'ar' ? 'Arabic' : language === 'es' ? 'Spanish' : language} business communication standards
+- All content must be in ${language === 'fr' ? 'French' : language === 'ar' ? 'Arabic' : language === 'es' ? 'Spanish' : language} - NO English words or phrases
+- Use appropriate ${language === 'fr' ? 'French' : language === 'ar' ? 'Arabic' : language === 'es' ? 'Spanish' : language} date format and cultural formalities
 
-Candidate CV:
+` 
+      : '';
+
+    return `
+You are an expert cover letter writer with deep knowledge of professional communication in multiple languages and cultures. Create a compelling, personalized cover letter that perfectly matches this job opportunity.
+
+${languageInstruction}
+
+📄 COVER LETTER REQUIREMENTS:
+
+🎯 STRUCTURE & FORMAT:
+- Professional business letter format
+- Proper date formatting for the target language/culture
+- Appropriate greeting (Dear Sir/Madam, Madame/Monsieur, etc.)
+- Clear subject line with position title
+- 3-4 paragraph structure: Opening, Body (2 paragraphs), Closing
+- Professional sign-off
+
+🔥 CONTENT STRATEGY:
+- Opening: Hook with specific connection to the role/company
+- Body 1: Relevant experience and skills matching job requirements
+- Body 2: Unique value proposition and achievements
+- Closing: Strong call to action and availability
+
+🚀 ADVANCED REQUIREMENTS:
+- NO AI-generated clichés or generic phrases
+- Natural, conversational tone while maintaining professionalism
+- Specific examples from CV experience relevant to the job
+- Quantifiable achievements when possible
+- Company-specific research and connection (when company name provided)
+- ATS-friendly keyword integration from job requirements
+
+🌟 PERSONALIZATION:
+- Reference specific skills and experiences from the CV
+- Connect past achievements to future value for the employer
+- Show genuine interest in the role and company
+- Demonstrate understanding of job requirements
+
+📊 CANDIDATE INFORMATION:
 ${JSON.stringify(cv, null, 2)}
 
-Job Offer:
+💼 JOB OPPORTUNITY:
 ${JSON.stringify(jobOffer, null, 2)}
 
-${additionalRequirements ? `Additional Requirements: ${additionalRequirements}` : ''}
+${additionalRequirements ? `📋 ADDITIONAL REQUIREMENTS:
+${additionalRequirements}` : ''}
 
-🚨 CRITICAL RULES - NO EXCEPTIONS:
+🔍 VALIDATION CHECKLIST:
+- Cover letter is in the specified language: ${language || 'English'}
+- All dates are properly formatted for the target culture
+- Content is specific to this candidate and role
+- No generic AI phrases or templates
+- Professional yet engaging tone
+- Clear value proposition
+- Strong call to action
 
-� HUMAN WRITING REQUIREMENTS:
-- Write as if you ARE the candidate (first person: "I", "my", "me")
-- NEVER use bracketed placeholders like [Company Name], [Position], [Platform], etc.
-- NEVER use phrases like "I am writing to express my interest" or "I would like to apply"
-- NEVER use corporate buzzwords like "results-driven", "team player", "synergy", "leverage"
-- NEVER use AI-generated phrases or templates
-- Write with genuine personality and authentic voice
-- Use specific, concrete examples from the candidate's actual experience
-
-🎯 OPENING ALTERNATIVES (Choose ONE natural approach):
-- Start with a relevant achievement or skill that matches the role
-- Begin with what excites you about the specific company/role
-- Open with a brief story about relevant experience
-- Start with a connection between your background and their needs
-
-❌ FORBIDDEN PHRASES & PATTERNS:
-- "I am writing to express..."
-- "I would like to apply for..."
-- "As advertised on [platform]..."
-- "I am excited to submit my application..."
-- Any text with brackets [ ]
-- "Please find my resume attached"
-- "I look forward to hearing from you"
-- "Thank you for your consideration"
-- "I am confident that my skills..."
-- "I would be a valuable addition..."
-
-✅ NATURAL ALTERNATIVES:
-- Jump straight into relevant experience or skills
-- "My experience with [specific technology] at [actual company] directly aligns with..."
-- "When I saw this position, I immediately thought of..."
-- "Having worked with [specific tools/methods], I understand..."
-- "Your recent [project/initiative] caught my attention because..."
-
-📊 STRUCTURE (3 paragraphs ONLY):
-1. Opening: Direct connection between your experience and their needs (3-4 sentences)
-2. Body: Specific achievements and skills that match requirements (3-4 sentences)  
-3. Closing: Next steps with confidence, no generic phrases (2-3 sentences)
-
-🔍 VALIDATION REQUIREMENTS:
-- Every company name, position title, and detail must come from the actual data provided
-- No generic industry terms - use specific technologies, tools, or methods mentioned
-- Include at least 2 quantifiable achievements from the CV
-- Reference specific requirements from the job offer
-- Use the candidate's actual name and experience details
-
-💡 WRITING QUALITY:
-- Vary sentence length and structure
-- Use active voice throughout
-- Show personality while maintaining professionalism
-- Demonstrate genuine interest in THIS specific role at THIS specific company
-- Connect your experience to their actual needs
-
-Return ONLY the cover letter text. Start with a natural greeting and write as the candidate would write it themselves.
-- Include relevant keywords from the job description naturally
-- Use action verbs that align with job requirements
-- Maintain professional formatting with clear paragraph breaks
-- Ensure easy readability for both ATS and human reviewers
-- Keep concise but impactful (350-400 words maximum)
-
-💡 WRITING TIPS:
-- Start with a strong opening that grabs attention
-- Use specific examples with numbers/metrics when possible
-- Show passion for the company/role
-- End with confidence and next steps
-- Use the candidate's name naturally throughout
-
-Return the cover letter as plain text, properly formatted with paragraph breaks. Start with "Dear Hiring Manager," and end with "Sincerely," followed by the candidate's name.
+Return ONLY the cover letter content. No additional explanations, metadata, or formatting instructions.
 `;
   }
 
