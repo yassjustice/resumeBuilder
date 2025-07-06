@@ -995,14 +995,12 @@ const generatePDFFromData = async (req, res, next) => {
   }
 };
 
-module.exports = {
-  getAllCVs,
+module.exports = {  getAllCVs,
   createCV,
   getCVById,
   updateCV,
   deleteCV,
-  generatePDF,
-  generatePDFWithOptions,
+  generatePDF,  generatePDFWithOptions,
   generatePrecisePDF,
   generatePrecisePDFWithOptions,
   getCVPreview,
