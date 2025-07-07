@@ -1140,8 +1140,8 @@ const CVPreview = ({ cv }) => {
         </h1>
         <p className="text-lg text-gray-600 mt-1">{cv.personalInfo?.title}</p>
         <div className="text-gray-600 mt-2">
-          {cv.personalInfo?.email} • {cv.personalInfo?.phone}
-          {cv.personalInfo?.location && ` • ${cv.personalInfo.location}`}
+          {(cv.personalInfo?.contact?.email || cv.personalInfo?.email)} • {(cv.personalInfo?.contact?.phone || cv.personalInfo?.phone)}
+          {(cv.personalInfo?.contact?.location || cv.personalInfo?.location) && ` • ${cv.personalInfo?.contact?.location || cv.personalInfo?.location}`}
         </div>
       </div>
 

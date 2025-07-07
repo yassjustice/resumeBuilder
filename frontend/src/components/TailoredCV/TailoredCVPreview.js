@@ -215,17 +215,17 @@ const TailoredCVPreview = ({ cv, jobOffer }) => {
               {cv.personalInfo.title}
             </h2>
             <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-              {cv.personalInfo.contact?.email && (
-                <span>📧 {cv.personalInfo.contact.email}</span>
+              {(cv.personalInfo.contact?.email || cv.personalInfo.email) && (
+                <span>📧 {cv.personalInfo.contact?.email || cv.personalInfo.email}</span>
               )}
-              {cv.personalInfo.contact?.phone && (
-                <span>📞 {cv.personalInfo.contact.phone}</span>
+              {(cv.personalInfo.contact?.phone || cv.personalInfo.phone) && (
+                <span>📞 {cv.personalInfo.contact?.phone || cv.personalInfo.phone}</span>
               )}
-              {cv.personalInfo.contact?.location && (
-                <span>📍 {cv.personalInfo.contact.location}</span>
+              {(cv.personalInfo.contact?.location || cv.personalInfo.location) && (
+                <span>📍 {cv.personalInfo.contact?.location || cv.personalInfo.location}</span>
               )}
-              {cv.personalInfo.contact?.linkedin && (
-                <span>💼 LinkedIn</span>
+              {(cv.personalInfo.contact?.linkedin || cv.personalInfo.linkedin) && (
+                <span>💼 {cv.personalInfo.contact?.linkedin || cv.personalInfo.linkedin}</span>
               )}
             </div>
           </div>

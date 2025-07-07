@@ -84,6 +84,13 @@ class CVTailoringService {
       const processedSections = this.dateProcessor.processAdvancedDateFormatting(sectionOptimizations);
 
       // Step 5: Merge all optimized data into tailored CV
+      console.log('🔍 Debug: Normalized CV personalInfo structure:', {
+        hasContact: !!normalizedCV.personalInfo?.contact,
+        contactKeys: normalizedCV.personalInfo?.contact ? Object.keys(normalizedCV.personalInfo.contact) : 'no contact',
+        flatEmail: normalizedCV.personalInfo?.email,
+        nestedEmail: normalizedCV.personalInfo?.contact?.email
+      });
+      
       const tailoredCV = {
         ...normalizedCV,
         ...processedSections,
@@ -100,6 +107,15 @@ class CVTailoringService {
           matchScore: analysis.matchScore || null
         }
       };
+
+      console.log('🔍 Debug: Final tailored CV personalInfo structure:', {
+        hasContact: !!tailoredCV.personalInfo?.contact,
+        contactKeys: tailoredCV.personalInfo?.contact ? Object.keys(tailoredCV.personalInfo.contact) : 'no contact',
+        flatEmail: tailoredCV.personalInfo?.email,
+        nestedEmail: tailoredCV.personalInfo?.contact?.email,
+        flatPhone: tailoredCV.personalInfo?.phone,
+        nestedPhone: tailoredCV.personalInfo?.contact?.phone
+      });
 
       // Step 6: Translate tailored CV if needed
       let finalCV = tailoredCV;

@@ -386,6 +386,20 @@ function generateHeader(cvData, t) {
   const title = personalInfo.title || '';
   let contact = personalInfo.contact || {};
   
+  // Handle both flat and nested contact structures for backward compatibility
+  if (!contact.email && !contact.phone && !contact.location && !contact.linkedin) {
+    // Fallback to flat structure if nested contact is empty
+    contact = {
+      email: personalInfo.email || '',
+      phone: personalInfo.phone || '',
+      location: personalInfo.location || '',
+      linkedin: personalInfo.linkedin || '',
+      github: personalInfo.github || '',
+      portfolio: personalInfo.website || personalInfo.portfolio || ''
+    };
+    console.log('🔄 HTML Generator: Using flat contact structure fallback');
+  }
+  
   // Convert contact Mongoose document to plain object if needed
   if (typeof contact.toObject === 'function') {
     contact = contact.toObject();

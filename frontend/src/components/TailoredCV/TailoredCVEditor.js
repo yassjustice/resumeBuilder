@@ -65,7 +65,7 @@ const TailoredCVEditor = ({ cv, onSave, onCancel }) => {
         <Input
           label="Email"
           type="email"
-          value={editedCV.personalInfo?.contact?.email || ''}
+          value={editedCV.personalInfo?.contact?.email || editedCV.personalInfo?.email || ''}
           onChange={(e) => updateSection('personalInfo', {
             ...editedCV.personalInfo,
             contact: {
@@ -76,7 +76,7 @@ const TailoredCVEditor = ({ cv, onSave, onCancel }) => {
         />
         <Input
           label="Phone"
-          value={editedCV.personalInfo?.contact?.phone || ''}
+          value={editedCV.personalInfo?.contact?.phone || editedCV.personalInfo?.phone || ''}
           onChange={(e) => updateSection('personalInfo', {
             ...editedCV.personalInfo,
             contact: {
@@ -87,7 +87,7 @@ const TailoredCVEditor = ({ cv, onSave, onCancel }) => {
         />
         <Input
           label="Location"
-          value={editedCV.personalInfo?.contact?.location || ''}
+          value={editedCV.personalInfo?.contact?.location || editedCV.personalInfo?.location || ''}
           onChange={(e) => updateSection('personalInfo', {
             ...editedCV.personalInfo,
             contact: {
@@ -98,7 +98,7 @@ const TailoredCVEditor = ({ cv, onSave, onCancel }) => {
         />
         <Input
           label="LinkedIn"
-          value={editedCV.personalInfo?.contact?.linkedin || ''}
+          value={editedCV.personalInfo?.contact?.linkedin || editedCV.personalInfo?.linkedin || ''}
           onChange={(e) => updateSection('personalInfo', {
             ...editedCV.personalInfo,
             contact: {
