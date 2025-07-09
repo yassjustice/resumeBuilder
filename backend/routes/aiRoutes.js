@@ -303,7 +303,7 @@ router.post('/download/cover-letter', async (req, res) => {
 
 /**
  * @route   GET /api/ai/quota-status
- * @desc    Get current AI service quota status
+ * @desc    Get current AI service quota status with provider information
  * @access  Public
  */
 router.get('/quota-status', async (req, res) => {
@@ -314,26 +314,35 @@ router.get('/quota-status', async (req, res) => {
     const serviceManager = aiService.serviceManager || aiService.aiServiceManager;
     
     if (!serviceManager) {
+      console.error('❌ AI service manager not available');
       return res.status(500).json({
         success: false,
-        message: 'AI service manager not available'
+        message: 'AI service manager not available',
+        error: 'Service manager initialization failed'
       });
     }
 
+    // Get comprehensive service status
     const status = serviceManager.getServiceStatus();
+    const currentProviderInfo = serviceManager.getCurrentProviderInfo();
+    const systemStats = serviceManager.getSystemStats();
     
-    console.log('🔍 Raw service status data:', JSON.stringify(status, null, 2));
+    console.log('🔍 Current provider info:', currentProviderInfo);
+    console.log('📈 System stats:', systemStats);
     
     // Calculate total usage with proper null checking
     const totalRequestsToday = status.reduce((sum, service) => sum + (service.dailyRequestCount || 0), 0);
     const totalDailyCapacity = status.reduce((sum, service) => sum + (service.maxRequestsPerDay || 0), 0);
     const usagePercentage = totalDailyCapacity > 0 ? Math.round((totalRequestsToday / totalDailyCapacity) * 100) : 0;
     
+    // Enhanced response with provider information
     res.json({
       success: true,
-      message: 'AI service quota status retrieved',
+      message: 'AI service quota status retrieved successfully',
       data: {
         services: status,
+        currentProvider: currentProviderInfo,
+        systemStats: systemStats,
         summary: {
           totalServices: status.length,
           activeServices: status.filter(s => !s.isQuotaExceeded).length,
@@ -341,20 +350,26 @@ router.get('/quota-status', async (req, res) => {
           totalRequestsToday,
           totalDailyCapacity,
           usagePercentage: `${usagePercentage}%`,
-          currentService: status.find(s => s.isCurrent)?.displayName || 'None'
+          currentService: status.find(s => s.isCurrent)?.displayName || 'None',
+          currentProviderName: currentProviderInfo.provider || 'Unknown',
+          currentModel: currentProviderInfo.model || 'Unknown'
         }
       }
     });
 
   } catch (error) {
     console.error('❌ Failed to get quota status:', error);
+    console.error('Error stack:', error.stack);
+    
     res.status(500).json({
       success: false,
-      message: 'Failed to get quota status',
-      error: error.message
+      message: 'Failed to retrieve quota status',
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
+
 
 /**
  * @route   POST /api/ai/reset-quota

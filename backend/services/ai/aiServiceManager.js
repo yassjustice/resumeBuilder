@@ -1,9 +1,11 @@
 /**
- * AI Service Manager - Multi-tier fallback system
+ * AI Service Manager - Multi-tier fallback system with Hugging Face integration
  * Manages multiple AI service instances with different API keys and models
+ * Supports both Gemini and Hugging Face APIs with provider toggle
  * Singleton pattern to ensure quota tracking across all services
  */
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { HfInference } = require('@huggingface/inference');
 
 class AIServiceManager {
   constructor() {
@@ -19,6 +21,11 @@ class AIServiceManager {
     this.requestCache = new Map(); // Cache to avoid duplicate requests
     this.pendingRequests = new Map(); // Track pending requests to avoid duplicates
     this.cacheTimeout = 5 * 60 * 1000; // 5 minutes cache
+    
+    // Provider configuration
+    this.preferredProvider = process.env.AI_PROVIDER_PREFERENCE || 'gemini'; // 'gemini' or 'huggingface'
+    this.enableProviderToggle = process.env.ENABLE_AI_PROVIDER_TOGGLE === 'true';
+    
     this.initializeServices();
     
     // Store the instance for singleton pattern
@@ -26,11 +33,39 @@ class AIServiceManager {
   }
 
   /**
-   * Initialize AI services with realistic quota tracking
-   * Only one service per API key, using the best model
-   * No wasteful combinations - each API key gets ONE service only
+   * Initialize AI services with both Gemini and Hugging Face support
+   * Uses consistent models across providers for optimal performance
    */
   initializeServices() {
+    // Initialize based on preference and availability
+    const geminiServices = this.initializeGeminiServices();
+    const huggingFaceServices = this.initializeHuggingFaceServices();
+    
+    // Combine services based on preference
+    if (this.preferredProvider === 'huggingface' && huggingFaceServices.length > 0) {
+      this.services = [...huggingFaceServices, ...geminiServices];
+      console.log(`🤗 Preferred provider: Hugging Face (${huggingFaceServices.length} services)`);
+    } else if (geminiServices.length > 0) {
+      this.services = [...geminiServices, ...huggingFaceServices];
+      console.log(`💎 Preferred provider: Gemini (${geminiServices.length} services)`);
+    } else {
+      this.services = [...huggingFaceServices];
+      console.log(`🤗 Fallback to Hugging Face only (${huggingFaceServices.length} services)`);
+    }
+
+    if (this.services.length === 0) {
+      throw new Error('No valid AI services could be initialized. Check your API keys.');
+    }
+
+    // Display service configuration
+    this.displayServiceSummary();
+  }
+
+  /**
+   * Initialize Gemini services with existing configuration
+   */
+  initializeGeminiServices() {
+    const services = [];
     const apiKeys = [
       process.env.GEMINI_API_KEY,
       process.env.GEMINI_API_KEY2,
@@ -38,76 +73,341 @@ class AIServiceManager {
       process.env.GEMINI_API_KEY4,
       process.env.GEMINI_API_KEY5,
       process.env.GEMINI_API_KEY6
-    ].filter(key => key); // Remove undefined keys
+    ].filter(key => key);
 
-    // Define model fallback hierarchy - different models for resilience
-    const modelFallbackHierarchy = [
-      'gemini-1.5-flash-latest',  // Primary (fastest)
-      'gemini-1.5-flash',         // Secondary (stable)
-      'gemini-1.5-pro-latest',    // Tertiary (most capable)
-      'gemini-pro',               // Quaternary (classic)
-      'gemini-1.5-flash-8b-latest', // Quinary (efficient)
-      'gemini-1.5-flash-8b'       // Senary (fallback)
-    ];
+    // Use consistent model for better performance
+    const primaryModel = 'gemini-1.5-flash-latest';
+    const fallbackModels = ['gemini-1.5-flash', 'gemini-1.5-pro-latest'];
 
     let serviceId = 1;
     
-    // Create multiple services per API key with different models for resilience
     apiKeys.forEach((apiKey, keyIndex) => {
-      const modelsToUse = modelFallbackHierarchy.slice(0, Math.min(3, modelFallbackHierarchy.length)); // Use 3 models per key for better resilience
+      // Primary model for each key
+      try {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const modelInstance = genAI.getGenerativeModel({ model: primaryModel });
+        
+        services.push({
+          id: serviceId++,
+          provider: 'gemini',
+          apiKeyIndex: keyIndex + 1,
+          model: primaryModel,
+          modelInstance: modelInstance,
+          requestCount: 0,
+          dailyRequestCount: 0,
+          lastResetTime: Date.now(),
+          lastDailyReset: new Date().toDateString(),
+          lastMinuteStart: new Date().getMinutes(),
+          maxRequestsPerMinute: 15, // Google's limit: 15 RPM
+          maxRequestsPerDay: 50, // Google's FREE tier limit: 50 RPD
+          isQuotaExceeded: false,
+          isTemporarilyDisabled: false,
+          quotaExceededAt: null,
+          lastSuccessfulRequest: null,
+          consecutiveFailures: 0,
+          displayName: `Gemini Service ${serviceId-1} (Key${keyIndex + 1}-${primaryModel})`
+        });
+        
+        console.log(`✅ Initialized Gemini Service ${serviceId-1} with API key ${keyIndex + 1}`);
+      } catch (error) {
+        console.log(`⚠️ Failed to initialize Gemini service with API key ${keyIndex + 1}:`, error.message);
+      }
       
-      modelsToUse.forEach((model, modelIndex) => {
+      // Add fallback models for resilience (only first 2 keys to avoid overcrowding)
+      if (keyIndex < 2) {
+        fallbackModels.forEach(model => {
+          try {
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const modelInstance = genAI.getGenerativeModel({ model: model });
+            
+            services.push({
+              id: serviceId++,
+              provider: 'gemini',
+              apiKeyIndex: keyIndex + 1,
+              model: model,
+              modelInstance: modelInstance,
+              requestCount: 0,
+              dailyRequestCount: 0,
+              lastResetTime: Date.now(),
+              lastDailyReset: new Date().toDateString(),
+              lastMinuteStart: new Date().getMinutes(),
+              maxRequestsPerMinute: 15,
+              maxRequestsPerDay: 50,
+              isQuotaExceeded: false,
+              isTemporarilyDisabled: false,
+              quotaExceededAt: null,
+              lastSuccessfulRequest: null,
+              consecutiveFailures: 0,
+              displayName: `Gemini Service ${serviceId-1} (Key${keyIndex + 1}-${model})`
+            });
+            
+            console.log(`✅ Initialized Gemini fallback service with ${model}`);
+          } catch (error) {
+            console.log(`⚠️ Failed to initialize Gemini fallback service:`, error.message);
+          }
+        });
+      }
+    });
+
+    return services;
+  }
+
+  /**
+   * Initialize Hugging Face services with free tier models
+   */
+  initializeHuggingFaceServices() {
+    const services = [];
+    const hfToken = process.env.HUGGING_FACE_AI_TOKEN;
+    
+    if (!hfToken) {
+      console.log('⚠️ No Hugging Face API token found, skipping HF services');
+      return services;
+    }
+
+    // Best free models for different tasks - using consistent model for performance
+    const primaryModel = 'mistralai/Mistral-7B-Instruct-v0.1'; // Primary model for all tasks
+    const fallbackModels = [
+      'microsoft/DialoGPT-medium',
+      'google/flan-t5-large',
+      'meta-llama/Llama-2-7b-chat-hf'
+    ];
+
+    let serviceId = 1000; // Start HF services from 1000 to distinguish
+
+    try {
+      // Primary Hugging Face service with Mistral-7B
+      const hfInference = new HfInference(hfToken);
+      
+      services.push({
+        id: serviceId++,
+        provider: 'huggingface',
+        apiKeyIndex: 1,
+        model: primaryModel,
+        modelInstance: hfInference,
+        hfToken: hfToken,
+        requestCount: 0,
+        dailyRequestCount: 0,
+        lastResetTime: Date.now(),
+        lastDailyReset: new Date().toDateString(),
+        lastMinuteStart: new Date().getMinutes(),
+        maxRequestsPerMinute: 30, // HF free tier: more generous rate limits
+        maxRequestsPerDay: 1000, // HF free tier: much higher daily limit
+        isQuotaExceeded: false,
+        isTemporarilyDisabled: false,
+        quotaExceededAt: null,
+        lastSuccessfulRequest: null,
+        consecutiveFailures: 0,
+        displayName: `Hugging Face Service ${serviceId-1} (${primaryModel})`
+      });
+      
+      console.log(`🤗 Initialized primary Hugging Face service with ${primaryModel}`);
+      
+      // Add fallback models for resilience
+      fallbackModels.forEach(model => {
         try {
-          const genAI = new GoogleGenerativeAI(apiKey);
-          const modelInstance = genAI.getGenerativeModel({ model: model });
-          
-          this.services.push({
+          services.push({
             id: serviceId++,
-            apiKeyIndex: keyIndex + 1,
+            provider: 'huggingface',
+            apiKeyIndex: 1,
             model: model,
-            modelInstance: modelInstance,
-            provider: 'gemini',
+            modelInstance: hfInference,
+            hfToken: hfToken,
             requestCount: 0,
             dailyRequestCount: 0,
             lastResetTime: Date.now(),
             lastDailyReset: new Date().toDateString(),
             lastMinuteStart: new Date().getMinutes(),
-            maxRequestsPerMinute: 15, // Google's actual limit: 15 RPM
-            maxRequestsPerDay: 50, // Google's actual FREE tier limit: 50 RPD
+            maxRequestsPerMinute: 30,
+            maxRequestsPerDay: 1000,
             isQuotaExceeded: false,
             isTemporarilyDisabled: false,
             quotaExceededAt: null,
             lastSuccessfulRequest: null,
             consecutiveFailures: 0,
-            displayName: `AI Service ${serviceId-1} (Key${keyIndex + 1}-${model})`
+            displayName: `Hugging Face Service ${serviceId-1} (${model.split('/').pop()})`
           });
           
-          console.log(`✅ Initialized AI Service ${serviceId-1} with API key ${keyIndex + 1} and model ${model}`);
+          console.log(`🤗 Initialized HF fallback service with ${model}`);
         } catch (error) {
-          console.log(`⚠️ Failed to initialize service with API key ${keyIndex + 1} and model ${model}:`, error.message);
+          console.log(`⚠️ Failed to initialize HF fallback service with ${model}:`, error.message);
         }
       });
-    });
-
-    if (this.services.length === 0) {
-      throw new Error('No valid AI services could be initialized. Check your API keys.');
+      
+    } catch (error) {
+      console.log(`⚠️ Failed to initialize Hugging Face services:`, error.message);
     }
 
-    // Display final service summary
+    return services;
+  }
+
+  /**
+   * Display comprehensive service summary
+   */
+  displayServiceSummary() {
+    const geminiCount = this.services.filter(s => s.provider === 'gemini').length;
+    const hfCount = this.services.filter(s => s.provider === 'huggingface').length;
     const totalDailyCapacity = this.services.reduce((sum, service) => sum + service.maxRequestsPerDay, 0);
-    console.log(`✅ Initialized ${this.services.length} AI services with REALISTIC quota limits (ALL QUOTAS RESET)`);
-    console.log(`🎯 Total daily capacity: ${totalDailyCapacity} requests across ${this.services.length} API keys`);
     
-    this.services.forEach(service => {
-      console.log(`   - ${service.displayName}:`);
-      console.log(`     • Daily Limit: ${service.maxRequestsPerDay} requests (Google Free Tier)`);
-      console.log(`     • Minute Limit: ${service.maxRequestsPerMinute} requests (Google Rate Limit)`);
-      console.log(`     • Current Usage: ${service.dailyRequestCount}/${service.maxRequestsPerDay} daily, ${service.requestCount}/${service.maxRequestsPerMinute} per minute`);
+    console.log(`\n🤖 AI SERVICE CONFIGURATION SUMMARY`);
+    console.log(`=====================================`);
+    console.log(`✅ Total Services: ${this.services.length}`);
+    console.log(`💎 Gemini Services: ${geminiCount}`);
+    console.log(`🤗 Hugging Face Services: ${hfCount}`);
+    console.log(`🎯 Preferred Provider: ${this.preferredProvider.toUpperCase()}`);
+    console.log(`🔄 Provider Toggle: ${this.enableProviderToggle ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`📊 Total Daily Capacity: ${totalDailyCapacity} requests`);
+    console.log(`\n📋 INDIVIDUAL SERVICES:`);
+    
+    this.services.forEach((service, index) => {
+      const isCurrent = index === this.currentServiceIndex;
+      console.log(`${isCurrent ? '👉' : '   '} ${service.displayName}:`);
+      console.log(`     • Provider: ${service.provider.toUpperCase()}`);
+      console.log(`     • Model: ${service.model}`);
+      console.log(`     • Daily Limit: ${service.maxRequestsPerDay} requests`);
+      console.log(`     • Rate Limit: ${service.maxRequestsPerMinute} requests/min`);
+      console.log(`     • Current Usage: ${service.dailyRequestCount}/${service.maxRequestsPerDay} daily`);
       console.log(`     • Status: ${service.isQuotaExceeded ? '❌ EXCEEDED' : '✅ AVAILABLE'}`);
     });
     
-    console.log(`⚠️ NOTE: Using Google's actual FREE TIER limits (50/day per key), not inflated numbers!`);
-    console.log(`🔄 ALL QUOTA TRACKING RESET - Services should be available now`);
+    console.log(`\n🎯 PERFORMANCE OPTIMIZATION:`);
+    console.log(`• Using consistent primary model across providers for reduced latency`);
+    console.log(`• Fallback models available for resilience`);
+    console.log(`• Provider preference: ${this.preferredProvider}`);
+    console.log(`=====================================\n`);
+  }
+
+  /**
+   * Toggle between AI providers if enabled
+   */
+  toggleProvider() {
+    if (!this.enableProviderToggle) {
+      console.log('❌ Provider toggle is disabled in configuration');
+      return false;
+    }
+
+    const currentProvider = this.services[this.currentServiceIndex]?.provider;
+    const targetProvider = currentProvider === 'gemini' ? 'huggingface' : 'gemini';
+    
+    // Find next available service with target provider
+    const targetServices = this.services.filter(s => 
+      s.provider === targetProvider && 
+      this.isServiceAvailable(s)
+    );
+
+    if (targetServices.length === 0) {
+      console.log(`❌ No available ${targetProvider} services found`);
+      return false;
+    }
+
+    // Switch to first available service of target provider
+    const targetServiceIndex = this.services.findIndex(s => s.id === targetServices[0].id);
+    this.currentServiceIndex = targetServiceIndex;
+    
+    console.log(`🔄 Switched from ${currentProvider} to ${targetProvider}`);
+    console.log(`👉 Now using: ${this.services[this.currentServiceIndex].displayName}`);
+    
+    return true;
+  }
+
+  /**
+   * Get current provider information
+   */
+  getCurrentProviderInfo() {
+    const currentService = this.services[this.currentServiceIndex];
+    if (!currentService) {
+      return {
+        error: 'No current service available',
+        provider: 'none',
+        model: 'none'
+      };
+    }
+
+    const providerServices = this.services.filter(s => s.provider === currentService.provider);
+    const availableInProvider = providerServices.filter(s => this.isServiceAvailable(s)).length;
+
+    return {
+      provider: currentService.provider,
+      model: currentService.model,
+      displayName: currentService.displayName,
+      serviceId: currentService.id,
+      isToggleEnabled: this.enableProviderToggle,
+      availableProviders: [...new Set(this.services.map(s => s.provider))],
+      dailyUsage: `${currentService.dailyRequestCount}/${currentService.maxRequestsPerDay}`,
+      minuteUsage: `${currentService.requestCount}/${currentService.maxRequestsPerMinute}`,
+      usagePercentage: currentService.maxRequestsPerDay > 0 ? 
+        Math.round((currentService.dailyRequestCount / currentService.maxRequestsPerDay) * 100) : 0,
+      isAvailable: this.isServiceAvailable(currentService),
+      providerStats: {
+        totalServices: providerServices.length,
+        availableServices: availableInProvider,
+        provider: currentService.provider
+      },
+      lastUsed: currentService.lastSuccessfulRequest || 'Never',
+      consecutiveFailures: currentService.consecutiveFailures || 0
+    };
+  }
+
+  /**
+   * Get comprehensive service status for quota monitoring
+   */
+  getServiceStatus() {
+    return this.services.map((service, index) => ({
+      id: service.id,
+      displayName: service.displayName,
+      provider: service.provider,
+      model: service.model,
+      apiKeyIndex: service.apiKeyIndex,
+      requestCount: service.requestCount || 0,
+      dailyRequestCount: service.dailyRequestCount || 0,
+      maxRequestsPerMinute: service.maxRequestsPerMinute || 0,
+      maxRequestsPerDay: service.maxRequestsPerDay || 0,
+      isQuotaExceeded: service.isQuotaExceeded || false,
+      isTemporarilyDisabled: service.isTemporarilyDisabled || false,
+      consecutiveFailures: service.consecutiveFailures || 0,
+      lastSuccessfulRequest: service.lastSuccessfulRequest,
+      quotaExceededAt: service.quotaExceededAt,
+      lastResetTime: service.lastResetTime,
+      lastDailyReset: service.lastDailyReset,
+      isCurrent: index === this.currentServiceIndex,
+      isAvailable: this.isServiceAvailable(service),
+      usagePercentage: service.maxRequestsPerDay > 0 ? 
+        Math.round((service.dailyRequestCount / service.maxRequestsPerDay) * 100) : 0
+    }));
+  }
+
+  /**
+   * Get system-wide AI service statistics
+   */
+  getSystemStats() {
+    const providers = ['gemini', 'huggingface'];
+    const stats = {
+      totalServices: this.services.length,
+      currentProvider: this.services[this.currentServiceIndex]?.provider || 'none',
+      preferredProvider: this.preferredProvider,
+      toggleEnabled: this.enableProviderToggle,
+      providers: {}
+    };
+
+    providers.forEach(provider => {
+      const providerServices = this.services.filter(s => s.provider === provider);
+      if (providerServices.length > 0) {
+        const totalDaily = providerServices.reduce((sum, s) => sum + (s.dailyRequestCount || 0), 0);
+        const totalDailyLimit = providerServices.reduce((sum, s) => sum + (s.maxRequestsPerDay || 0), 0);
+        const available = providerServices.filter(s => this.isServiceAvailable(s)).length;
+        
+        stats.providers[provider] = {
+          totalServices: providerServices.length,
+          availableServices: available,
+          dailyUsage: totalDaily,
+          dailyLimit: totalDailyLimit,
+          usagePercentage: totalDailyLimit > 0 ? Math.round((totalDaily / totalDailyLimit) * 100) : 0,
+          status: available > 0 ? 'available' : 'exhausted',
+          primaryModel: providerServices[0]?.model || 'unknown'
+        };
+      }
+    });
+
+    return stats;
   }
 
   /**
@@ -218,6 +518,12 @@ class AIServiceManager {
     // Check minute limit
     if (service.requestCount >= service.maxRequestsPerMinute) {
       console.log(`📊 ${service.displayName} minute limit reached (${service.requestCount}/${service.maxRequestsPerMinute})`);
+      return false;
+    }
+
+    // Check consecutive failures (disable after 3 failures)
+    if (service.consecutiveFailures >= 3) {
+      console.log(`📊 ${service.displayName} too many consecutive failures (${service.consecutiveFailures})`);
       return false;
     }
 
@@ -418,7 +724,7 @@ class AIServiceManager {
   }
 
   /**
-   * Execute the actual AI request
+   * Execute the actual AI request with multi-provider support
    */
   async executeRequest(prompt, isGeneration, cacheKey) {
     const maxServiceAttempts = this.services.length;
@@ -434,7 +740,7 @@ class AIServiceManager {
         break;
       }
 
-      console.log(`🤖 Using ${service.displayName} (service ${serviceAttempt + 1}/${maxServiceAttempts})`);
+      console.log(`🤖 Using ${service.displayName} (${service.provider.toUpperCase()}) (service ${serviceAttempt + 1}/${maxServiceAttempts})`);
 
       // Only ONE attempt per service to avoid wasting quota
       try {
@@ -446,14 +752,24 @@ class AIServiceManager {
         }
         
         console.log(`🔄 Making single request to ${service.displayName}...`);
-        const result = await service.modelInstance.generateContent(prompt);
-        const response = await result.response;
-        const content = response.text();
+        
+        let content;
+        if (service.provider === 'gemini') {
+          // Gemini API call
+          const result = await service.modelInstance.generateContent(prompt);
+          const response = await result.response;
+          content = response.text();
+        } else if (service.provider === 'huggingface') {
+          // Hugging Face API call
+          content = await this.executeHuggingFaceRequest(service, prompt);
+        } else {
+          throw new Error(`Unsupported provider: ${service.provider}`);
+        }
         
         // Only increment counters AFTER successful API call
         this.incrementRequestCounters(service);
         
-        console.log(`✅ Success with ${service.displayName} on first attempt`);
+        console.log(`✅ Success with ${service.displayName} (${service.provider.toUpperCase()}) on first attempt`);
         
         // Cache the result (only for extraction)
         if (!isGeneration) {
@@ -462,54 +778,20 @@ class AIServiceManager {
         
         return {
           content,
-          serviceUsed: service.displayName
+          serviceUsed: service.displayName,
+          provider: service.provider,
+          model: service.model
         };
         
       } catch (error) {
         lastError = error;
-        console.log(`❌ ${service.displayName} failed:`, error.message);
+        console.log(`❌ ${service.displayName} (${service.provider.toUpperCase()}) failed:`, error.message);
         
-        // Handle model-specific failures
-        this.handleModelFailure(service, error);
-        
-        // Enhanced error tracking for quota issues
-        if (error.message.includes('429') || error.status === 429 || error.message.includes('quota')) {
-          console.log(`🚨 DETAILED 429 ERROR for ${service.displayName}:`);
-          console.log(`   - Error message: ${error.message}`);
-          console.log(`   - Error status: ${error.status}`);
-          console.log(`   - Error code: ${error.code}`);
-          console.log(`   - Full error:`, error);
-          console.log(`   - Current daily count: ${service.dailyRequestCount}/${service.maxRequestsPerDay}`);
-          console.log(`   - Current minute count: ${service.requestCount}/${service.maxRequestsPerMinute}`);
-          
-          // Extract actual quota info from Google's error if available
-          if (error.errorDetails) {
-            try {
-              const quotaFailure = error.errorDetails.find(detail => detail['@type']?.includes('QuotaFailure'));
-              if (quotaFailure?.violations) {
-                console.log(`   - Google quota violations:`, quotaFailure.violations);
-                const violation = quotaFailure.violations[0];
-                if (violation?.quotaValue) {
-                  console.log(`   - Google's actual quota limit: ${violation.quotaValue}`);
-                  // Update our tracking to match Google's actual limits
-                  if (violation.quotaValue === "50" && service.maxRequestsPerDay > 50) {
-                    console.log(`   - Adjusting daily limit from ${service.maxRequestsPerDay} to 50 (Google Free Tier)`);
-                    service.maxRequestsPerDay = 50;
-                  }
-                }
-              }
-            } catch (parseError) {
-              console.log(`   - Could not parse error details:`, parseError.message);
-            }
-          }
-          
-          service.isQuotaExceeded = true;
-          service.quotaExceededAt = Date.now();
-          console.log(`🔄 Moving to next service immediately (no retries to conserve quota)`);
-        } else {
-          // Non-quota error, track consecutive failures
-          service.consecutiveFailures = (service.consecutiveFailures || 0) + 1;
-          console.log(`   - Non-quota error, consecutive failures: ${service.consecutiveFailures}`);
+        // Handle provider-specific failures
+        if (service.provider === 'gemini') {
+          this.handleGeminiFailure(service, error);
+        } else if (service.provider === 'huggingface') {
+          this.handleHuggingFaceFailure(service, error);
         }
         
         // Continue to next service immediately to preserve quota
@@ -519,7 +801,117 @@ class AIServiceManager {
 
     // If we reach here, all AI services failed
     // No fallback - only AI is allowed
-    throw new Error(`All AI services failed. ${lastError?.message?.includes('quota') ? 'API quota exceeded. Please try again later or upgrade your plan.' : `Last error: ${lastError?.message || 'Unknown error'}`}`);
+    const errorMessage = lastError?.message?.includes('quota') ? 
+      'API quota exceeded across all providers. Please try again later or upgrade your plan.' : 
+      `All AI services failed. Last error: ${lastError?.message || 'Unknown error'}`;
+    
+    throw new Error(errorMessage);
+  }
+
+  /**
+   * Execute Hugging Face API request with proper formatting
+   */
+  async executeHuggingFaceRequest(service, prompt) {
+    try {
+      // Format prompt for different model types
+      let formattedPrompt = prompt;
+      
+      if (service.model.includes('Mistral') || service.model.includes('Llama')) {
+        // Chat format for instruction models
+        formattedPrompt = `<s>[INST] ${prompt} [/INST]`;
+      } else if (service.model.includes('flan-t5')) {
+        // Simple prompt format for T5
+        formattedPrompt = prompt;
+      }
+
+      // Use textGeneration for most models
+      const response = await service.modelInstance.textGeneration({
+        model: service.model,
+        inputs: formattedPrompt,
+        parameters: {
+          max_new_tokens: 2000,
+          temperature: 0.3,
+          do_sample: true,
+          top_p: 0.9,
+          return_full_text: false
+        }
+      });
+      
+      // Extract generated text
+      let content = '';
+      if (typeof response === 'string') {
+        content = response;
+      } else if (response.generated_text) {
+        content = response.generated_text;
+      } else if (Array.isArray(response) && response[0]?.generated_text) {
+        content = response[0].generated_text;
+      } else {
+        throw new Error('Unexpected response format from Hugging Face');
+      }
+      
+      // Clean up the response
+      content = content.replace(formattedPrompt, '').trim();
+      
+      return content;
+      
+    } catch (error) {
+      // Enhance error message for debugging
+      if (error.message.includes('not available')) {
+        throw new Error(`Model ${service.model} is not available on Hugging Face`);
+      } else if (error.message.includes('rate limit')) {
+        throw new Error(`Hugging Face rate limit exceeded for ${service.model}`);
+      } else {
+        throw new Error(`Hugging Face API error: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Handle Gemini-specific failures
+   */
+  handleGeminiFailure(service, error) {
+    // Enhanced error tracking for quota issues
+    if (error.message.includes('429') || error.status === 429 || error.message.includes('quota')) {
+      console.log(`🚨 GEMINI QUOTA ERROR for ${service.displayName}:`);
+      console.log(`   - Error message: ${error.message}`);
+      console.log(`   - Error status: ${error.status}`);
+      console.log(`   - Current daily count: ${service.dailyRequestCount}/${service.maxRequestsPerDay}`);
+      console.log(`   - Current minute count: ${service.requestCount}/${service.maxRequestsPerMinute}`);
+      
+      service.isQuotaExceeded = true;
+      service.quotaExceededAt = Date.now();
+    } else {
+      // Non-quota error, track consecutive failures
+      service.consecutiveFailures = (service.consecutiveFailures || 0) + 1;
+      console.log(`   - Non-quota error, consecutive failures: ${service.consecutiveFailures}`);
+    }
+  }
+
+  /**
+   * Handle Hugging Face-specific failures
+   */
+  handleHuggingFaceFailure(service, error) {
+    if (error.message.includes('rate limit') || error.message.includes('429')) {
+      console.log(`🚨 HUGGING FACE RATE LIMIT for ${service.displayName}:`);
+      console.log(`   - Error message: ${error.message}`);
+      console.log(`   - Current daily count: ${service.dailyRequestCount}/${service.maxRequestsPerDay}`);
+      console.log(`   - Current minute count: ${service.requestCount}/${service.maxRequestsPerMinute}`);
+      
+      service.isQuotaExceeded = true;
+      service.quotaExceededAt = Date.now();
+    } else if (error.message.includes('not available') || error.message.includes('loading')) {
+      console.log(`🚨 HUGGING FACE MODEL UNAVAILABLE: ${service.model}`);
+      service.isTemporarilyDisabled = true;
+      // Re-enable after 5 minutes
+      setTimeout(() => {
+        service.isTemporarilyDisabled = false;
+        console.log(`🔄 Re-enabled ${service.displayName} after model loading timeout`);
+      }, 5 * 60 * 1000);
+    } else {
+      // Other errors
+      service.consecutiveFailures = (service.consecutiveFailures || 0) + 1;
+      console.log(`   - HF error, consecutive failures: ${service.consecutiveFailures}`);
+    }
   }
 
   /**
