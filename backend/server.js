@@ -23,6 +23,7 @@ const authRoutes = require('./routes/authRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const languageRoutes = require('./routes/languageRoutes');
 const translationRoutes = require('./routes/translationRoutes');
+const puterAIRoutesModular = require('./routes/puterAIRoutes_modular');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -47,7 +48,7 @@ app.use(cors({
   origin: '*', // Allow all origins for now
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'Pragma', 'X-Session-ID'],
   exposedHeaders: ['Content-Disposition', 'Content-Length', 'Content-Type']
 }));
 
@@ -99,9 +100,15 @@ app.use(performanceMonitor);
 
 // Rate limiting - different limits for different endpoints
 app.use('/api/ai', rateLimiter({ 
-  max: 20, 
-  windowMs: 60000, // 20 requests per minute for AI endpoints
+  max: process.env.NODE_ENV === 'development' ? 100 : 20, // More lenient in development
+  windowMs: 60000, // requests per minute for AI endpoints
+  keyGenerator: (req) => {
+    // Use user ID if available, otherwise fall back to IP
+    const userId = req.user?.userId || req.headers.authorization?.split(' ')[1] || req.ip;
+    return `ai:${userId}`;
+  },
   onLimitReached: (req, res) => {
+    console.log(`⚠️ AI rate limit exceeded for key: ${req.ip} at ${new Date().toISOString()}`);
     res.status(429).json({
       success: false,
       message: 'AI rate limit exceeded. Please wait before making more requests.',
@@ -158,6 +165,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/cvs', cvRoutes);
 app.use('/api/themes', themeRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/puter', puterAIRoutesModular); // Robust modular puter routes
 app.use('/api/language', languageRoutes);
 app.use('/api/translation', translationRoutes);
 

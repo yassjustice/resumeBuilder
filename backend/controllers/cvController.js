@@ -933,7 +933,7 @@ const generatePDFFromData = async (req, res, next) => {
     
     // Ensure language is set for proper PDF translations
     // Check for language in metadata (for tailored CVs) or use default
-    const language = cvData.metadata?.language || cvData.language || 'en';
+    const language = cvData.metadata?.language || cvData.tailoringMetadata?.targetLanguage || cvData.language || 'en';
     cvData.language = language;
     
     console.log('📋 Extracted cvData type:', typeof cvData);
@@ -941,7 +941,11 @@ const generatePDFFromData = async (req, res, next) => {
     console.log('📋 cvData.personalInfo:', cvData?.personalInfo);
     console.log('🌐 cvData.language:', cvData?.language);
     console.log('🌐 metadata.language:', cvData?.metadata?.language);
-    console.log('📊 Is tailored CV:', !!cvData?.metadata?.tailored);
+    console.log('🌐 tailoringMetadata.targetLanguage:', cvData?.tailoringMetadata?.targetLanguage);
+    console.log('📊 Is tailored CV:', !!(cvData?.tailoringMetadata && !cvData?.fallback));
+    console.log('📊 Tailoring metadata:', cvData?.tailoringMetadata);
+    console.log('📊 Is fallback CV:', !!cvData?.fallback);
+    console.log('📊 Fallback CV language properly set:', cvData?.fallback && cvData?.language);
     
     if (!cvData) {
       console.log('❌ No CV data provided');

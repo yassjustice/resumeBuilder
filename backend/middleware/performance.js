@@ -114,6 +114,11 @@ const rateLimiter = (config = {}) => {
     const key = keyGenerator(req);
     const limit = cache.checkRateLimit(key, max, windowMs / 1000);
 
+    // Log rate limit status for debugging
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🔒 Rate limit check for key "${key}": ${limit.remaining}/${limit.limit} remaining, allowed: ${limit.allowed}`);
+    }
+
     // Set rate limit headers
     res.set({
       'X-RateLimit-Limit': limit.limit,

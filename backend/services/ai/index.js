@@ -8,7 +8,10 @@ const FileProcessingService = require('./fileProcessingService');
 const CVProcessingService = require('./cvProcessingService');
 const CoverLetterService = require('./coverLetterService');
 const CVValidationService = require('./cvValidationService');
-const CVTailoringService = require('./cvTailoringService');
+const CVTailoringService = require('./tailoring/index');
+
+// Import Puter services
+const PuterServices = require('./puter');
 
 module.exports = {
   AIService,
@@ -16,5 +19,9 @@ module.exports = {
   CVProcessingService,
   CoverLetterService,
   CVValidationService,
-  CVTailoringService
+  CVTailoringService,
+  
+  // Puter services
+  PuterServices,
+  ...PuterServices // Also export individual services directly
 };

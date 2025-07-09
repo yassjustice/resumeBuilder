@@ -140,11 +140,73 @@ router.post('/tailor-cv', async (req, res) => {
   try {
     const { cv, jobOffer, additionalRequirements, language } = req.body;
     
+    console.log('📋 Tailoring request data:', {
+      hasCV: !!cv,
+      cvExperienceCount: cv.experience?.length || 0,
+      cvCertificationsCount: cv.certifications?.length || 0,
+      cvTitle: cv.personalInfo?.title || cv.title || 'N/A',
+      cvSkillsCategories: Object.keys(cv.skills || {}),
+      jobOfferType: typeof jobOffer,
+      jobOfferContent: typeof jobOffer === 'string' ? jobOffer.substring(0, 100) + '...' : JSON.stringify(jobOffer).substring(0, 100) + '...',
+      language: language || 'en'
+    });
+    
+    // Extract job offer text from the request
+    let jobOfferText = '';
+    if (typeof jobOffer === 'string') {
+      jobOfferText = jobOffer;
+    } else if (jobOffer && typeof jobOffer === 'object') {
+      // If jobOffer is an object, try to extract text from common fields
+      jobOfferText = jobOffer.description || jobOffer.text || jobOffer.content || JSON.stringify(jobOffer);
+    } else {
+      throw new Error('Job offer text is required and must be a string or object with description');
+    }
+    
+    console.log('📋 Extracted job offer text length:', jobOfferText.length);
+    
+    console.log('🎯 Starting CV tailoring process...');
+    console.log('🔍 Input parameters:', {
+      hasOriginalCV: !!cv,
+      jobOfferLength: jobOfferText.length,
+      targetLanguage: language || 'en',
+      hasAdditionalRequirements: !!additionalRequirements
+    });
+    
     // Use the new advanced tailoring service
-    const CVTailoringService = require('../services/ai/cvTailoringService');
+    const CVTailoringService = require('../services/ai/tailoring/index');
     const tailoringService = new CVTailoringService();
     
-    const tailoredCV = await tailoringService.tailorCV(cv, jobOffer, additionalRequirements, language || 'en');
+    const tailoredCV = await tailoringService.tailorCV(cv, jobOfferText, additionalRequirements, language || 'en');
+    
+    // DEBUGGING: Log the actual tailored results
+    console.log('🔍 TAILORING DEBUG - Results Summary:');
+    console.log('📝 Original vs Tailored Title:', {
+      original: cv.personalInfo?.title || 'N/A',
+      tailored: tailoredCV.personalInfo?.title || 'N/A'
+    });
+    console.log('📄 Summary changed:', {
+      original_length: cv.summary?.length || 0,
+      tailored_length: tailoredCV.summary?.length || 0,
+      changed: cv.summary !== tailoredCV.summary
+    });
+    console.log('💼 Experience selection:', {
+      original_count: cv.experience?.length || 0,
+      tailored_count: tailoredCV.experience?.length || 0,
+      first_experience_company: tailoredCV.experience?.[0]?.company || 'N/A'
+    });
+    console.log('🔧 Skills structure:', {
+      original_categories: Object.keys(cv.skills || {}),
+      tailored_categories: Object.keys(tailoredCV.skills || {}),
+      has_unprofessional_categories: JSON.stringify(tailoredCV.skills || {}).toLowerCase().includes('less')
+    });
+    console.log('🎓 Education count:', {
+      original: cv.education?.length || 0,
+      tailored: tailoredCV.education?.length || 0
+    });
+    console.log('📜 Certifications selection:', {
+      original: cv.certifications?.length || 0,
+      tailored: tailoredCV.certifications?.length || 0
+    });
     
     res.json({
       success: true,

@@ -3,7 +3,7 @@ import axios from 'axios';
 // Create axios instance with base configuration
 const apiClient = axios.create({
   baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
-  timeout: 120000, // 2 minutes for AI requests that might need rate limiting
+  timeout: 180000, // 3 minutes for AI requests with translation processing
   headers: {
     'Content-Type': 'application/json',
   },
@@ -329,7 +329,7 @@ export const api = {
         fileName 
       }, {
         responseType: 'blob',
-        timeout: 120000, // 2 minute timeout like CV generation
+        timeout: 180000, // 3 minute timeout for AI processing with translation
         headers: {
           'Accept': 'application/pdf',
           'Content-Type': 'application/json'

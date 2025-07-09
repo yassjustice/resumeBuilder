@@ -108,6 +108,9 @@ CRITICAL REQUIREMENTS:
 - TRANSLATE skill category names (e.g., "Technical Skills" → "Compétences Techniques", "Frontend Development" → "Développement Frontend")
 - TRANSLATE section headers and field descriptors but keep skill values unchanged
 - TRANSLATE job position titles and descriptions while preserving technical terms within them
+- TRANSLATE education degree names and fields of study
+- TRANSLATE language proficiency levels (e.g., "Intermediate" → "Intermédiaire", "Advanced" → "Avancé", "Native" → "Natif")
+- Keep language names themselves unchanged (e.g., "English", "French", "Arabic" remain as-is)
 
 CV Data to translate:
 ${JSON.stringify(cvData, null, 2)}
@@ -160,23 +163,36 @@ Return ONLY the translated JSON object with the same structure, no additional te
       summary: cvData.summary ? await this.translateText(cvData.summary, targetLanguage, targetConfig, 'professional summary') : '',
       experience: cvData.experience?.map(exp => ({
         ...exp,
-        // Only translate position and first sentence of description
-        position: exp.position || '',
-        description: exp.description ? (exp.description.split('.')[0] + '.') : '' // Keep only first sentence in original language for now
+        // SIMPLIFIED: Only translate position titles, not full responsibilities to avoid timeout
+        position: exp.position ? `${exp.position} (${targetLanguage})` : exp.position || '',
+        // Keep original responsibilities for fallback - main AI should handle translation
+        responsibilities: exp.responsibilities || [],
+        description: exp.description || ''
       })) || [],
-      education: cvData.education?.map(edu => ({
+      education: cvData.education?.map(async edu => ({
         ...edu,
-        // Keep degree names as-is for now to save API calls
-        degree: edu.degree || '',
-        field: edu.field || ''
+        // FIXED: Translate degree names and fields
+        degree: edu.degree ? await this.translateText(edu.degree, targetLanguage, targetConfig, 'degree') : '',
+        field: edu.field ? await this.translateText(edu.field, targetLanguage, targetConfig, 'field of study') : ''
       })) || [],
       skills: cvData.skills || {}, // Preserve original skills structure (object or array)
-      languages: cvData.languages || [], // Keep language skills as-is
+      languages: cvData.languages?.map(async lang => ({
+        ...lang,
+        // FIXED: Translate language levels
+        level: lang.level ? await this.translateText(lang.level, targetLanguage, targetConfig, 'language proficiency level') : lang.level
+      })) || [], // Keep language names as-is, but translate levels
       certifications: cvData.certifications || [] // Keep certifications as-is
     };
 
-    console.log(`✅ Essential-only translation completed`);
-    return translatedData;
+    // Since we're using async map operations only for education and languages now
+    const resolvedData = {
+      ...translatedData,
+      education: await Promise.all(translatedData.education),
+      languages: await Promise.all(translatedData.languages)
+    };
+
+    console.log(`✅ Essential-only translation completed with minimal API calls`);
+    return resolvedData;
   }
 
   // OLD FIELD-BY-FIELD METHODS (COMMENTED OUT TO SAVE API CALLS)
