@@ -1,0 +1,50 @@
+{
+  "taskQueue": [],
+  "activeTasks": {},
+  "completedTasks": [],
+  "failedTasks": [],
+  "taskTemplate": {
+    "id": "string",
+    "title": "string",
+    "description": "string",
+    "type": "enum: [feature, bugfix, refactor, enhancement, documentation, testing]",
+    "priority": "enum: [low, medium, high, critical]",
+    "status": "enum: [pending, in_progress, completed, failed, blocked]",
+    "assignedFiles": [],
+    "dependencies": [],
+    "acceptanceCriteria": [],
+    "createdAt": "timestamp",
+    "updatedAt": "timestamp",
+    "startedAt": "timestamp",
+    "completedAt": "timestamp",
+    "estimatedTime": "string",
+    "actualTime": "string",
+    "notes": [],
+    "rollbackPlan": "string"
+  },
+  "executionRules": {
+    "mustCompleteBeforeNext": true,
+    "requireConfirmation": true,
+    "documentChanges": true,
+    "testAfterImplementation": true,
+    "createBackupBefore": true
+  },
+  "sessionTracking": {
+    "currentSession": null,
+    "sessionTasks": [],
+    "sessionStartTime": null,
+    "sessionProgress": 0
+  },
+  "metrics": {
+    "tasksCompleted": 0,
+    "tasksFailed": 0,
+    "averageCompletionTime": 0,
+    "successRate": 0
+  },
+  "safeguards": {
+    "maxConcurrentTasks": 1,
+    "requireUserApproval": true,
+    "autoSaveProgress": true,
+    "rollbackOnFailure": true
+  }
+}

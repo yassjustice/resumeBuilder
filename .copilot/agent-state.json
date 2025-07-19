@@ -1,0 +1,51 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-07-19",
+  "projectContext": {
+    "name": "ResumeBuilder",
+    "phase": "development",
+    "architecture": "full-stack",
+    "backend": "Node.js",
+    "frontend": "React",
+    "database": "MongoDB/Mongoose",
+    "aiIntegration": "multi-provider"
+  },
+  "currentSession": {
+    "sessionId": "cv-tailoring-session-20250719",
+    "startTime": "2025-07-19T00:00:00Z",
+    "currentTask": "cv-tailoring",
+    "workingDirectory": "d:\\New folder\\Yassir hakimi\\bureau stuff\\IT\\Projects\\CvMaker\\ResumeBuilder",
+    "activeFiles": ["frontend/src/pages/AdvancedJobApplicationPage.js"]
+  },
+  "capabilities": {
+    "codeGeneration": true,
+    "debugging": true,
+    "refactoring": true,
+    "testing": true,
+    "documentation": true,
+    "aiServiceIntegration": true,
+    "pdfGeneration": true,
+    "themeManagement": true
+  },
+  "constraints": {
+    "mustFollowProjectDNA": true,
+    "preserveModularArchitecture": true,
+    "maintainSeparationOfConcerns": true,
+    "requireTaskCompletion": true,
+    "noHallucination": true,
+    "mustAskForClarification": true
+  },
+  "memory": {
+    "recentTasks": ["Loaded context for CV tailoring focus"],
+    "completedFeatures": [],
+    "knownIssues": [],
+    "architecturalDecisions": []
+  },
+  "behaviorSettings": {
+    "verbosity": "detailed",
+    "confirmationRequired": true,
+    "stepByStepExecution": true,
+    "errorHandling": "strict",
+    "documentationLevel": "comprehensive"
+  }
+}

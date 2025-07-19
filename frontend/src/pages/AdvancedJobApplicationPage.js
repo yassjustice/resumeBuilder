@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { useCV } from '../contexts/CVContext';
 import { useTailoredCV } from '../contexts/TailoredCVContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import usePuterAI from '../hooks/usePuterAI';
 import Button from '../components/UI/Button';
 import Input from '../components/UI/Input';
 import Textarea from '../components/UI/Textarea';
@@ -11,7 +10,6 @@ import LoadingSpinner from '../components/UI/LoadingSpinner';
 import LanguageSelector from '../components/Language/LanguageSelector';
 import TailoredCVPreview from '../components/TailoredCV/TailoredCVPreview';
 import TailoredCVEditor from '../components/TailoredCV/TailoredCVEditor';
-import PuterAIComponent from '../components/AI/PuterAIComponent';
 import { api } from '../services/api';
 
 export const AdvancedJobApplicationPage = () => {
@@ -25,35 +23,15 @@ export const AdvancedJobApplicationPage = () => {
     aiProcessing,
     error,
     extractJobOffer,
-    extractJobOfferWithFallback,
-    generateWithPuterAI,
     generateTailoredCV,
     generateCoverLetter,
     updateTailoredCVSection,
+    setJobOffer,
     downloadTailoredCV,
     saveTailoredCV,
     clearAllData,
     clearError
   } = useTailoredCV();
-
-  // 🆓 Puter.js AI Integration
-  const {
-    isReady: puterReady,
-    isAuthenticated: puterAuthenticated,
-    authenticationRequired,
-    processing: puterProcessing,
-    currentOperation: puterOperation,
-    error: puterError,
-    enhanceCV: puterEnhanceCV,
-    generateCoverLetter: puterGenerateCoverLetter,
-    analyzeJobMatch: puterAnalyzeJobMatch,
-    optimizeSkills: puterOptimizeSkills,
-    signIn: puterSignIn,
-    clearError: clearPuterError,
-    getResult: getPuterResult
-  } = usePuterAI();
-
-  // No more placeholders needed - using real Puter integration
 
   const [step, setStep] = useState(0);
   const [jobOfferMethod, setJobOfferMethod] = useState('paste');
@@ -69,9 +47,6 @@ export const AdvancedJobApplicationPage = () => {
   const [comparisonView, setComparisonView] = useState('side-by-side'); // 'side-by-side' or 'overlay'
   const [aiStatus, setAiStatus] = useState('');
   
-  // 🆓 Puter.js AI States
-  const [enablePuterAI, setEnablePuterAI] = useState(true); // PRIORITIZE PUTER FOR DEV
-
   const steps = [
     { id: 0, title: 'Job Offer', icon: '📋' },
     { id: 1, title: 'Language', icon: '🌐' },
@@ -150,23 +125,26 @@ export const AdvancedJobApplicationPage = () => {
         extractedText = jobOfferText;
       }
 
-      console.log('🔍 Extracting job offer details...');
-      console.log(`🤖 Using ${enablePuterAI ? 'Puter.js' : 'Traditional Gemini'} as primary extraction method`);
+      console.log('🤖 Using Gemini AI as primary extraction method');
       
-      const result = await extractJobOfferWithFallback(extractedText, enablePuterAI);
-      
-      if (result.success) {
-        console.log(`✅ Job offer processed successfully using ${result.method || 'unknown'} method`);
-        if (result.method === 'puter') {
-          setSuccessMessage('🆓 Job offer extracted using Puter.js AI!');
-        } else {
+      // Direct API call for job offer extraction
+      const response = await api.extractJobOfferFromText(extractedText);
+        if (response?.success && response?.data) {
+          // Validate and set job offer
+          setJobOffer(response.data);
+          // Debug: log jobOffer after update
+          setTimeout(() => {
+            console.log('[CV Tailoring] jobOffer after update:', jobOffer);
+          }, 500);
           setSuccessMessage('🤖 Job offer extracted successfully!');
+          setTimeout(() => setSuccessMessage(''), 3000);
+          setStep(1); // Move to language selection step
+          if (!response.data) {
+            setLocalError('No job offer data was extracted. Please paste or upload a valid job offer.');
+          }
+        } else {
+          setLocalError(response?.error || 'Failed to process job offer');
         }
-        setTimeout(() => setSuccessMessage(''), 3000);
-        setStep(1); // Move to language selection step
-      } else {
-        setLocalError(result.error || 'Failed to process job offer');
-      }
     } catch (error) {
       console.error('Error processing job offer:', error);
       setLocalError(error.message || 'Failed to process job offer');
@@ -191,8 +169,13 @@ export const AdvancedJobApplicationPage = () => {
   };
 
   const generateDocuments = async () => {
-    if (!cvData || !jobOffer) {
-      setLocalError('Missing CV or job offer data');
+
+    if (!cvData) {
+      setLocalError('Missing CV data. Please create or import your CV first.');
+      return;
+    }
+    if (!jobOffer) {
+      setLocalError('Missing job offer data. Please extract or paste a job offer before generating tailored documents.');
       return;
     }
 
@@ -201,41 +184,25 @@ export const AdvancedJobApplicationPage = () => {
     clearError();
 
     try {
-      console.log('🎯 Starting advanced CV tailoring and cover letter generation...');
+      console.log('🤖 Using Gemini AI for generation...');
       
-      // 🆓 PUTER AI PRIORITIZED FOR DEV
-      if (enablePuterAI && puterReady) {
-        console.log('🆓 Using Puter.js AI for generation...');
-        const result = await generateWithPuterAI(cvData, jobOffer, additionalRequirements, currentLanguage);
-        
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to generate documents with Puter.js');
-        }
-        
-        console.log('✅ Puter.js generation completed successfully');
-        setSuccessMessage('🎉 Your tailored CV and cover letter have been generated successfully with Puter.js AI!');
-        setTimeout(() => setSuccessMessage(''), 5000); // Clear after 5 seconds
-        setStep(4); // Move to review step
-      } else {
-        console.log('🤖 Using Traditional AI (Gemini)...');
-        // Generate both tailored CV and cover letter with language selection
-        const [cvResult, coverLetterResult] = await Promise.all([
-          generateTailoredCV(cvData, jobOffer, additionalRequirements, currentLanguage),
-          generateCoverLetter(cvData, jobOffer, additionalRequirements, currentLanguage)
-        ]);
+      // Generate both tailored CV and cover letter with language selection
+      const [cvResult, coverLetterResult] = await Promise.all([
+        generateTailoredCV(cvData, jobOffer, additionalRequirements, currentLanguage),
+        generateCoverLetter(cvData, jobOffer, additionalRequirements, currentLanguage)
+      ]);
 
-        if (!cvResult.success) {
-          throw new Error(cvResult.error || 'Failed to generate tailored CV');
-        }
-        if (!coverLetterResult.success) {
-          throw new Error(coverLetterResult.error || 'Failed to generate cover letter');
-        }
-        
-        console.log('✅ Documents generated successfully');
-        setSuccessMessage('🎉 Your tailored CV and cover letter have been generated successfully!');
-        setTimeout(() => setSuccessMessage(''), 5000); // Clear after 5 seconds
-        setStep(4); // Move to review step
+      if (!cvResult.success) {
+        throw new Error(cvResult.error || 'Failed to generate tailored CV');
       }
+      if (!coverLetterResult.success) {
+        throw new Error(coverLetterResult.error || 'Failed to generate cover letter');
+      }
+      
+      console.log('✅ Documents generated successfully');
+      setSuccessMessage('🎉 Your tailored CV and cover letter have been generated successfully!');
+      setTimeout(() => setSuccessMessage(''), 5000); // Clear after 5 seconds
+      setStep(4); // Move to review step
     } catch (err) {
       console.error('Document generation error:', err);
       setLocalError(err.message || 'Failed to generate documents');
@@ -311,54 +278,6 @@ export const AdvancedJobApplicationPage = () => {
                 Provide the job offer details to create a perfectly tailored CV
               </p>
             </div>
-
-            {/* AI Engine Selection Toggle */}
-            <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-lg p-4 mb-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <span className="text-sm font-medium text-gray-700 mr-4">AI Engine:</span>
-                  <div className="flex items-center space-x-3">
-                    <span className={`text-sm ${!enablePuterAI ? 'font-semibold text-blue-600' : 'text-gray-500'}`}>
-                      🤖 Gemini AI
-                    </span>
-                    <button
-                      onClick={() => setEnablePuterAI(!enablePuterAI)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        enablePuterAI ? 'bg-green-600' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          enablePuterAI ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                    <span className={`text-sm ${enablePuterAI ? 'font-semibold text-green-600' : 'text-gray-500'}`}>
-                      🆓 Puter.js AI
-                    </span>
-                  </div>
-                </div>
-                <div className="text-xs text-gray-500">
-                  {enablePuterAI ? '🆓 Free unlimited AI' : '🤖 Traditional backend'}
-                </div>
-              </div>
-              {enablePuterAI && (
-                <div className="mt-2 text-xs text-green-700 bg-green-100 rounded p-2">
-                  🆓 <strong>Puter.js Mode:</strong> Using free unlimited AI with automatic fallback to traditional AI if needed.
-                </div>
-              )}
-              {!enablePuterAI && (
-                <div className="mt-2 text-xs text-blue-700 bg-blue-100 rounded p-2">
-                  🤖 <strong>Traditional Mode:</strong> Using Gemini AI with automatic Puter.js fallback if services are overloaded.
-                </div>
-              )}
-            </div>
-
-            {successMessage && (
-              <div className="bg-green-50 border border-green-200 rounded-md p-3 mb-4">
-                <p className="text-sm text-green-600">{successMessage}</p>
-              </div>
-            )}
 
             {/* Method Selection */}
             <div className="flex justify-center space-x-4 mb-8">
@@ -572,88 +491,6 @@ export const AdvancedJobApplicationPage = () => {
               </p>
             </div>
 
-            {/* 🆓 AI Engine Toggle - DEV MODE */}
-            <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-lg p-4 mb-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-1">🤖 AI Engine Selection (Dev Mode)</h3>
-                  <p className="text-sm text-gray-600">Choose your preferred AI engine for document generation</p>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <label className="flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={enablePuterAI}
-                      onChange={(e) => setEnablePuterAI(e.target.checked)}
-                      className="sr-only"
-                    />
-                    <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      enablePuterAI ? 'bg-green-600' : 'bg-gray-400'
-                    }`}>
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        enablePuterAI ? 'translate-x-6' : 'translate-x-1'
-                      }`} />
-                    </div>
-                    <span className="ml-2 text-sm font-medium text-gray-900">
-                      {enablePuterAI ? '🆓 Puter.js AI (Priority)' : '🤖 Traditional AI (Gemini)'}
-                    </span>
-                  </label>
-                </div>
-              </div>
-              
-              {/* Status indicators */}
-              <div className="mt-3 flex items-center space-x-4 text-xs">
-                <div className={`flex items-center ${puterReady ? 'text-green-600' : 'text-red-600'}`}>
-                  <span className={`w-2 h-2 rounded-full mr-1 ${puterReady ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                  Puter.js {puterReady ? 'Ready' : 'Loading...'}
-                </div>
-                {puterAuthenticated && (
-                  <div className="flex items-center text-green-600">
-                    <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
-                    Authenticated
-                  </div>
-                )}
-                {authenticationRequired && (
-                  <div className="flex items-center text-yellow-600">
-                    <span className="w-2 h-2 bg-yellow-500 rounded-full mr-1"></span>
-                    Auth Required
-                  </div>
-                )}
-              </div>
-              
-              {/* Test Puter.js button */}
-              {puterReady && (
-                <div className="mt-3">
-                  <Button
-                    onClick={async () => {
-                      try {
-                        setAiStatus('Testing Puter.js connection...');
-                        const service = (await import('../services/puterAIService')).default;
-                        const testResult = await service.testConnection();
-                        
-                        if (testResult.success) {
-                          setSuccessMessage(`✅ Puter.js test successful! Model: ${testResult.model}`);
-                          setAiStatus('');
-                        } else {
-                          setLocalError(`❌ Puter.js test failed: ${testResult.error}`);
-                          setAiStatus('');
-                        }
-                      } catch (err) {
-                        setLocalError(`❌ Test error: ${err.message}`);
-                        setAiStatus('');
-                      }
-                    }}
-                    variant="outline"
-                    size="sm"
-                    disabled={puterProcessing}
-                    className="text-blue-600 border-blue-300"
-                  >
-                    🧪 Test Puter.js Connection
-                  </Button>
-                </div>
-              )}
-            </div>
-
             {(localError || error) && (
               <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
                 <p className="text-sm text-red-600">{localError || error}</p>
@@ -730,117 +567,20 @@ export const AdvancedJobApplicationPage = () => {
                 <Button
                   onClick={generateDocuments}
                   variant="primary"
-                  disabled={isProcessing || aiProcessing || puterProcessing || (enablePuterAI && !puterReady)}
-                  className={`${
-                    enablePuterAI 
-                      ? (puterReady ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 hover:bg-gray-400 cursor-not-allowed')
-                      : 'bg-blue-600 hover:bg-blue-700'
-                  } min-w-[300px]`}
+                  disabled={isProcessing || aiProcessing}
+                  className="bg-blue-600 hover:bg-blue-700 min-w-[300px]"
                 >
-                  {isProcessing || aiProcessing || puterProcessing ? (
+                  {isProcessing || aiProcessing ? (
                     <div className="flex items-center">
                       <LoadingSpinner size="sm" />
-                      <span className="ml-2">
-                        {enablePuterAI ? 'Generating with Puter.js AI...' : 'Generating with Traditional AI...'}
-                      </span>
+                      <span className="ml-2">Generating with Gemini AI...</span>
                     </div>
-                  ) : enablePuterAI ? (
-                    <>
-                      🆓 Generate with Puter.js AI 
-                      {!puterReady && ' (Loading...)'}
-                      {authenticationRequired && ' (Sign-in Required)'}
-                    </>
                   ) : (
-                    '🤖 Generate with Traditional AI (Gemini)'
+                    '🤖 Generate with Gemini AI'
                   )}
                 </Button>
               </div>
-
-              {/* Authentication Helper */}
-              {enablePuterAI && authenticationRequired && (
-                <div className="text-center">
-                  <Button
-                    onClick={puterSignIn}
-                    variant="outline"
-                    disabled={puterProcessing}
-                    className="border-green-300 text-green-600 hover:bg-green-50"
-                  >
-                    🔐 Sign in to Puter.js for Free AI
-                  </Button>
-                </div>
-              )}
             </div>
-
-            {/* AI Processing Status */}
-            {aiStatus && (
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mt-4">
-                <div className="flex items-center">
-                  <LoadingSpinner size="sm" />
-                  <p className="text-sm text-blue-600 ml-2">{aiStatus}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Puter AI Info */}
-            {puterReady && (
-              <div className="bg-green-50 border border-green-200 rounded-md p-4 mt-4">
-                <h4 className="font-semibold text-green-800 mb-2">
-                  🆓 Puter.js AI Available
-                  {puterAuthenticated && <span className="ml-2 text-xs bg-green-600 text-white px-2 py-1 rounded">Authenticated</span>}
-                  {!puterAuthenticated && authenticationRequired && (
-                    <span className="ml-2 text-xs bg-yellow-600 text-white px-2 py-1 rounded">Auth Required</span>
-                  )}
-                </h4>
-                <ul className="text-sm text-green-700 space-y-1">
-                  <li>• Free unlimited AI processing</li>
-                  <li>• Advanced job matching analysis</li>
-                  <li>• CV enhancement with latest models</li>
-                  <li>• Professional cover letter generation</li>
-                  <li>• Skills optimization recommendations</li>
-                </ul>
-                
-                {!puterAuthenticated && authenticationRequired && (
-                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                    <p className="text-sm text-yellow-800 mb-2">
-                      Sign in to Puter.js for full AI features
-                    </p>
-                    <Button
-                      onClick={puterSignIn}
-                      variant="secondary"
-                      size="sm"
-                      className="text-yellow-700 border-yellow-300"
-                    >
-                      🔐 Sign In to Puter.js
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {puterError && (
-              <div className="bg-red-50 border border-red-200 rounded-md p-3 mt-4">
-                <p className="text-sm text-red-600">Puter AI Error: {puterError}</p>
-                <div className="flex gap-2 mt-2">
-                  <Button
-                    onClick={clearPuterError}
-                    variant="secondary"
-                    size="sm"
-                  >
-                    Clear Error
-                  </Button>
-                  {authenticationRequired && (
-                    <Button
-                      onClick={puterSignIn}
-                      variant="primary"
-                      size="sm"
-                      className="bg-blue-600 hover:bg-blue-700"
-                    >
-                      🔐 Sign In to Fix
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         );
 
@@ -1356,78 +1096,6 @@ export const AdvancedJobApplicationPage = () => {
           </p>
         </div>
 
-        {/* 🆓 Puter.js AI Authentication Status */}
-        <div className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className={`w-3 h-3 rounded-full ${
-                puterReady && puterAuthenticated ? 'bg-green-500' : 
-                puterReady && !puterAuthenticated ? 'bg-yellow-500' : 
-                'bg-gray-400'
-              }`} />
-              <div>
-                <h3 className="font-semibold text-gray-900">
-                  🆓 Puter.js AI Engine
-                </h3>
-                <p className="text-sm text-gray-600">
-                  {puterReady && puterAuthenticated ? 
-                    '✅ Ready with unlimited AI access' : 
-                    puterReady && !puterAuthenticated ? 
-                    '⚠️ Guest mode - limited AI usage' : 
-                    '⏳ Initializing...'
-                  }
-                </p>
-              </div>
-            </div>
-            
-            {puterReady && !puterAuthenticated && (
-              <Button
-                onClick={async () => {
-                  try {
-                    setAiStatus('Signing in to Puter.js...');
-                    const success = await puterSignIn();
-                    if (success) {
-                      setAiStatus('✅ Signed in successfully! You now have unlimited AI access.');
-                      setTimeout(() => setAiStatus(''), 3000);
-                    } else {
-                      setAiStatus('❌ Sign-in failed. Please try again.');
-                      setTimeout(() => setAiStatus(''), 3000);
-                    }
-                  } catch (error) {
-                    setAiStatus(`❌ Sign-in error: ${error.message}`);
-                    setTimeout(() => setAiStatus(''), 5000);
-                  }
-                }}
-                variant="primary"
-                size="sm"
-                disabled={puterProcessing}
-              >
-                {puterProcessing ? 'Signing in...' : 'Sign in with Puter'}
-              </Button>
-            )}
-            
-            {puterReady && puterAuthenticated && (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-green-600 font-medium">
-                  🎉 Unlimited AI Access
-                </span>
-              </div>
-            )}
-          </div>
-          
-          {aiStatus && (
-            <div className="mt-3 p-2 bg-blue-100 border border-blue-300 rounded text-sm text-blue-800">
-              {aiStatus}
-            </div>
-          )}
-          
-          {puterError && (
-            <div className="mt-3 p-2 bg-red-100 border border-red-300 rounded text-sm text-red-800">
-              🚫 {puterError}
-            </div>
-          )}
-        </div>
-
         {/* Progress Steps */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
@@ -1477,68 +1145,6 @@ export const AdvancedJobApplicationPage = () => {
         >
           {renderStepContent()}
         </motion.div>
-
-        {/* 🆓 Standalone Puter AI Testing Section - TEMPORARILY DISABLED */}
-        {step === 4 && cvData && false && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.2 }}
-            className="mt-8 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg shadow-lg p-6"
-          >
-            <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-              🆓 Advanced Puter.js AI Testing (Temporarily Disabled)
-            </h3>
-            <p className="text-gray-600 mb-6">
-              Puter.js integration is temporarily disabled while we fix compatibility issues.
-            </p>
-          </motion.div>
-        )}
-
-        {/* 🆓 Puter.js Integration Status (Development) */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mt-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              🆓 Puter.js AI Integration Status
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div className="flex items-center">
-                <span className={`w-3 h-3 rounded-full mr-2 ${puterReady ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                <span className={puterReady ? 'text-green-800' : 'text-red-800'}>
-                  Ready: {puterReady ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="flex items-center">
-                <span className={`w-3 h-3 rounded-full mr-2 ${puterAuthenticated ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
-                <span className={puterAuthenticated ? 'text-green-800' : 'text-yellow-800'}>
-                  Auth: {puterAuthenticated ? 'Yes' : 'Guest'}
-                </span>
-              </div>
-              <div className="flex items-center">
-                <span className={`w-3 h-3 rounded-full mr-2 ${puterProcessing ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'}`}></span>
-                <span className={puterProcessing ? 'text-blue-800' : 'text-gray-600'}>
-                  Processing: {puterProcessing ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="flex items-center">
-                <span className={`w-3 h-3 rounded-full mr-2 ${puterError ? 'bg-red-500' : 'bg-green-500'}`}></span>
-                <span className={puterError ? 'text-red-800' : 'text-green-800'}>
-                  Error: {puterError ? 'Yes' : 'No'}
-                </span>
-              </div>
-            </div>
-            {puterError && (
-              <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                <strong>Error:</strong> {puterError}
-              </div>
-            )}
-            {puterOperation && (
-              <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
-                <strong>Current Operation:</strong> {puterOperation}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

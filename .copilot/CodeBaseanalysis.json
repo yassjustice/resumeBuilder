@@ -1,0 +1,124 @@
+{
+  "projectStructure": {
+    "backend": {
+      "entryPoint": "backend/server.js",
+      "controllers": {
+        "path": "backend/controllers/",
+        "files": ["cvController.js", "themeController.js", "userController.js"],
+        "purpose": "Business logic handlers"
+      },
+      "models": {
+        "path": "backend/models/",
+        "files": ["CV.js", "Theme.js", "User.js"],
+        "purpose": "Mongoose schema definitions"
+      },
+      "routes": {
+        "path": "backend/routes/",
+        "files": ["cvRoutes.js", "aiRoutes.js", "authRoutes.js", "themeRoutes.js", "languageRoutes.js"],
+        "purpose": "API endpoint definitions"
+      },
+      "services": {
+        "path": "backend/services/",
+        "subdirs": ["ai/", "pdf/", "html/", "themes/"],
+        "purpose": "Core business logic and external integrations"
+      },
+      "middleware": {
+        "path": "backend/middleware/",
+        "purpose": "Error handling, validation, performance"
+      },
+      "config": {
+        "path": "backend/config/",
+        "purpose": "Database and environment configuration"
+      },
+      "utils": {
+        "path": "backend/utils/",
+        "purpose": "Utility functions and helpers"
+      }
+    },
+    "frontend": {
+      "entryPoint": "src/index.js",
+      "components": {
+        "path": "src/components/",
+        "subdirs": ["AI/", "Auth/", "CV/", "Debug/", "Language/", "Layout/", "Skills/", "TailoredCV/", "UI/"],
+        "purpose": "Modular React components"
+      },
+      "contexts": {
+        "path": "src/contexts/",
+        "purpose": "React context providers for state management"
+      },
+      "hooks": {
+        "path": "src/hooks/",
+        "purpose": "Custom React hooks"
+      },
+      "pages": {
+        "path": "src/pages/",
+        "purpose": "Page-level components"
+      },
+      "services": {
+        "path": "src/services/",
+        "purpose": "Frontend service logic and API communication"
+      },
+      "utils": {
+        "path": "src/utils/",
+        "purpose": "Frontend utility functions"
+      }
+    }
+  },
+  "keyFeatures": {
+    "cvGeneration": {
+      "status": "implemented",
+      "components": ["CV builder UI", "AI-powered suggestions", "Template system"]
+    },
+    "cvTailoring": {
+      "status": "active",
+      "components": ["Tailored CV UI", "AI-powered tailoring", "Job offer matching", "Cover letter generation"],
+      "currentFocus": true,
+      "lastSession": "2025-07-19"
+    },
+    "aiIntegration": {
+      "status": "implemented",
+      "components": ["Multi-provider support", "Content generation", "Translation", "Validation"]
+    },
+    "pdfGeneration": {
+      "status": "implemented",
+      "components": ["Smart page breaks", "Theme application", "Preview system"]
+    },
+    "themeSystem": {
+      "status": "implemented",
+      "components": ["Theme models", "Customization", "Application logic"]
+    },
+    "userAuth": {
+      "status": "implemented",
+      "components": ["Authentication", "User management", "Session handling"]
+    }
+  },
+  "technicalStack": {
+    "backend": {
+      "runtime": "Node.js",
+      "framework": "Express.js",
+      "database": "MongoDB",
+      "odm": "Mongoose",
+      "ai": "Multiple providers"
+    },
+    "frontend": {
+      "library": "React",
+      "styling": "Tailwind CSS",
+      "stateManagement": "Context API",
+      "buildTool": "Create React App"
+    }
+  },
+  "architecturalPrinciples": {
+    "modularDesign": true,
+    "separationOfConcerns": true,
+    "extensibility": true,
+    "maintainability": true,
+    "scalability": true
+  },
+  "qualityGates": {
+    "mustPreserveModularity": true,
+    "mustMaintainSeparation": true,
+    "mustFollowPatterns": true,
+    "mustIncludeErrorHandling": true,
+    "mustIncludeValidation": true
+  }
+}

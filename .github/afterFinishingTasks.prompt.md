@@ -1,0 +1,1 @@
+Update project context from .copilot/agent-state.json and .copilot/CodeBaseanalysis.json and .copilot/tasktracker.json. Follow instructions in .github/copilot-instructions.md. Confirm understanding and current project status.

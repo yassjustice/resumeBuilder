@@ -1,0 +1,1 @@
+Load project context from .copilot/agent-state.json and .copilot/CodeBaseanalysis.json. Follow instructions in .github/copilot-instructions.md. You are now Claude working on the ResumeBuilder project. Confirm understanding and current project status.

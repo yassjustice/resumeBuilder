@@ -23,7 +23,7 @@ import { usePerformanceMonitor, useComponentPerformance } from '../hooks/usePerf
 
 export const CVBuilderPage = () => {
   const { cvData, updateCV, saveCV, extractCVFromFile, extractCVFromText, downloadCV, isLoading, error, clearError, clearAllCVData } = useCV();
-  const { currentLanguage, changeLanguage, resetLanguage, isRTL, getFieldLabels } = useLanguage();
+  const { currentLanguage, changeLanguage, isRTL, getFieldLabels } = useLanguage();
   const navigate = useNavigate();
 
   // Enhanced hooks for better UX
@@ -1319,7 +1319,7 @@ export const CVBuilderPage = () => {
                     setManualSaveCompleted(false);
                     setExtractedData(null);
                     setShowLanguageSelection(false);
-                    resetLanguage(); // Reset language selection
+                    changeLanguage('en'); // Reset language selection to English
                     clearError();
                     
                     console.log('✅ CV Builder: Form reset completed');

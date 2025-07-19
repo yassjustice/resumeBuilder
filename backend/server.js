@@ -24,7 +24,6 @@ const aiRoutes = require('./routes/aiRoutes');
 const aiProviderRoutes = require('./routes/aiProviderRoutes');
 const languageRoutes = require('./routes/languageRoutes');
 const translationRoutes = require('./routes/translationRoutes');
-const puterAIRoutesModular = require('./routes/puterAIRoutes_modular');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -167,7 +166,6 @@ app.use('/api/cvs', cvRoutes);
 app.use('/api/themes', themeRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/ai-provider', aiProviderRoutes); // AI provider management routes
-app.use('/api/puter', puterAIRoutesModular); // Robust modular puter routes
 app.use('/api/language', languageRoutes);
 app.use('/api/translation', translationRoutes);
 
